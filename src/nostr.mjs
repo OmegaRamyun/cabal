@@ -477,6 +477,10 @@ export function applyRelayEvents(localCampaigns, events, opts = {}) {
       const localKey = c.key;
       // metadata replace (never `key`, never the posts array wholesale)
       for (const k of ["game", "title", "members", "window", "anchorPost", "demo"]) if (k in raw) c[k] = raw[k];
+      // V48 verifier fix: adopt the format id (validated) so a ring synced
+      // from a relay keeps its template link — without it the ring vanishes
+      // from "Rings running it" and its future posts lose the format tag.
+      if (typeof raw.formatId === "string" && /^fmt_[a-z0-9]{8}$/.test(raw.formatId)) c.formatId = raw.formatId;
       if (typeof raw.createdBy === "string" && raw.createdBy.trim()) c.createdBy = str(raw.createdBy, 80).trim();
       if ("removedMembers" in raw) c.removedMembers = cleanRemovedMembers(raw.removedMembers);
       if (typeof raw.createdAt === "string" && !c.createdAt) c.createdAt = raw.createdAt;

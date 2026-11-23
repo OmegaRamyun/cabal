@@ -208,6 +208,10 @@ export function usageLabel(formatId, usage) {
   const u = toUsageMap(usage);
   if (!u || !u.has(lc(formatId))) return null;
   const n = u.get(lc(formatId));
+  // V48 verifier fix: never show "used by 0 rings" — a format with
+  // kind-1 assists but no kind-30078 campaign event has count 0, and
+  // "0 rings" would dress an unproven template up as counted.
+  if (!n || n <= 0) return null;
   return `used by ${n} ring${n === 1 ? "" : "s"}`;
 }
 
@@ -291,4 +295,139 @@ export function mount(rootEl, ctx = {}) {
   start.href = typeof ctx.startHref === "string" ? ctx.startHref : "#/rings";
   start.className = "format-start";
   rootEl.appendChild(el(doc, "p", null)).appendChild(start);
+}
+
+// ---- V49: create a template (pure core + mount) ----
+
+export const CREATE_TEMPLATE_COPY = {
+  heading: "New campaign template",
+  lede:
+    "A template is a format, not a caption: the shape of a post and how to disclose it. " +
+    "When you save it, it appears in Campaigns and any ring can pick it up and run it in its own words.",
+  submit: "Save template",
+  cancel: "Cancel",
+};
+
+/** "a, B, a" -> ["a","b"]. Trimmed, lowercased, deduped, empties dropped. */
+export function parseFormatTags(text) {
+  const parts = Array.isArray(text) ? text : String(text ?? "").split(",");
+  return [...new Set(parts.map((t) => lc(t)).filter(Boolean))];
+}
+
+const DISCLOSURE_RE = /disclos/i;
+
+/**
+ * Validates the create-form values and builds the format.
+ * Returns { ok:true, format } or { ok:false, errors:{ field: message } }.
+ * Required: tagline, description, howTo (final check is the shared
+ * createFormat/validateFormat, not re-implemented) plus a disclosure
+ * mention in howTo (every template ships a disclosure line). Tags optional.
+ */
+export function buildFormatFromForm(values = {}) {
+  const v = isObj(values) ? values : {};
+  const errors = {};
+  if (!isNonEmptyString(v.tagline)) errors.tagline = "Give the template a short name.";
+  if (!isNonEmptyString(v.description)) errors.description = "Say in a sentence or two what this template is.";
+  if (!isNonEmptyString(v.howTo)) {
+    errors.howTo = "Explain the structure and how ringmates disclose.";
+  } else if (!DISCLOSURE_RE.test(v.howTo)) {
+    errors.howTo = "Add a disclosure line (say how ringmates disclose they are in a ring).";
+  }
+  if (Object.keys(errors).length) return { ok: false, errors };
+  try {
+    const format = createFormat({
+      tagline: v.tagline.trim(),
+      description: v.description.trim(),
+      howTo: v.howTo.trim(),
+      tags: parseFormatTags(v.tags),
+      examples: [],
+    });
+    return { ok: true, format };
+  } catch (err) {
+    return { ok: false, errors: { form: String(err.message || err) } };
+  }
+}
+
+/**
+ * mountCreate(rootEl, ctx) — the "New campaign template" form.
+ * ctx: { onCreate(format), onCreated(format), onCancel() }
+ * No storage here: the caller saves inside onCreate. onCreated runs only
+ * after onCreate returned without throwing.
+ */
+export function mountCreate(rootEl, ctx = {}) {
+  const doc = rootEl.ownerDocument;
+  rootEl.textContent = "";
+  const C = CREATE_TEMPLATE_COPY;
+  rootEl.appendChild(el(doc, "h2", C.heading));
+  rootEl.appendChild(el(doc, "p", C.lede, "view-lede"));
+
+  const form = el(doc, "form", null, "format-create-form");
+  const errBox = el(doc, "p", null, "form-error");
+  errBox.hidden = true;
+  form.appendChild(errBox);
+
+  const inputs = {};
+  const fieldErr = {};
+  const field = (name, label, kind, hint, placeholder) => {
+    const wrap = el(doc, "label", label);
+    const input = el(doc, kind === "text" ? "input" : "textarea");
+    input.name = name;
+    if (kind === "text") input.type = "text";
+    else input.rows = kind === "long" ? 5 : 3;
+    input.value = "";
+    input.placeholder = placeholder;
+    input.required = name !== "tags";
+    wrap.appendChild(input);
+    form.appendChild(wrap);
+    if (hint) form.appendChild(el(doc, "p", hint, "field-hint"));
+    const fe = el(doc, "p", null, "form-error field-error");
+    fe.hidden = true;
+    form.appendChild(fe);
+    inputs[name] = input;
+    fieldErr[name] = fe;
+  };
+  field("tagline", "Template name", "text", null, "e.g. Weekly devlog, one clip");
+  field("description", "What is it?", "short", "One or two sentences.", "e.g. Each ringmate shares one short clip of their game from the week.");
+  field("howTo", "How a ring runs it", "long",
+    "Structure and disclosure only. No ready-to-paste captions: ringmates write their own words.",
+    "e.g. Post one clip, say what changed this week, and add a disclosure line that you are in a ring.");
+  field("tags", "Tags (optional, comma-separated)", "text", null, "devlog, clips");
+
+  const submit = el(doc, "button", C.submit, "primary");
+  submit.type = "submit";
+  form.appendChild(submit);
+  if (typeof ctx.onCancel === "function") {
+    const cancel = el(doc, "button", C.cancel);
+    cancel.type = "button";
+    cancel.addEventListener("click", () => ctx.onCancel());
+    form.appendChild(cancel);
+  }
+
+  form.addEventListener("submit", (e) => {
+    if (e && typeof e.preventDefault === "function") e.preventDefault();
+    for (const n of Object.keys(fieldErr)) { fieldErr[n].textContent = ""; fieldErr[n].hidden = true; }
+    errBox.textContent = ""; errBox.hidden = true;
+    const result = buildFormatFromForm({
+      tagline: inputs.tagline.value,
+      description: inputs.description.value,
+      howTo: inputs.howTo.value,
+      tags: inputs.tags.value,
+    });
+    if (!result.ok) {
+      for (const [name, msg] of Object.entries(result.errors)) {
+        if (fieldErr[name]) { fieldErr[name].textContent = msg; fieldErr[name].hidden = false; }
+        else { errBox.textContent = msg; errBox.hidden = false; }
+      }
+      return;
+    }
+    try {
+      if (typeof ctx.onCreate === "function") ctx.onCreate(result.format);
+    } catch (err) {
+      errBox.textContent = `Could not save: ${err.message || err}`;
+      errBox.hidden = false;
+      return;
+    }
+    if (typeof ctx.onCreated === "function") ctx.onCreated(result.format);
+  });
+  rootEl.appendChild(form);
 }

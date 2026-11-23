@@ -328,6 +328,14 @@ function turnPostCardHtml({ campaign, post }) {
   </article>`;
 }
 
+// V49: the Rings view's create action — what a ring is and what comes next.
+export const START_RING = {
+  button: 'Start a ring',
+  help:
+    'A ring is a small group of devs who boost each other\u2019s posts, always in their own words. ' +
+    'Tap it, pick your game\u2019s post, invite the ring, and they amplify it.',
+};
+
 export function mount(rootEl, ctx) {
   const store = resolveStore(ctx);
   const navigate = (ctx && ctx.navigate) || (() => {});
@@ -350,7 +358,7 @@ export function mount(rootEl, ctx) {
     rootEl.innerHTML = `
       <section class="home-setup">
         <h2>What&rsquo;s your game?</h2>
-        <p>One question, then this becomes your game&rsquo;s dashboard.</p>
+        <p>One question, then this becomes your game&rsquo;s dashboard. Next you can start a ring: pick one of your game&rsquo;s posts and invite other devs to amplify it in their own words.</p>
         <form id="game-setup-form">
           <p class="form-error" id="setup-errors" hidden></p>
           <label>Game name
@@ -420,7 +428,10 @@ export function mount(rootEl, ctx) {
           <p class="game-links">${gameLinksHtml(game)}</p>
           ${game.tags && game.tags.length ? `<p class="game-tags">${game.tags.map(esc).join(', ')}</p>` : ''}
         </header>
-        <p><button type="button" id="start-campaign" class="primary">Start a campaign</button></p>
+        <section class="start-ring">
+          <p><button type="button" id="start-campaign" class="primary">${esc(START_RING.button)}</button></p>
+          <p class="view-lede start-ring-help">${esc(START_RING.help)}</p>
+        </section>
         <section class="live-campaign">
           <h3>Latest activity</h3>
           ${live ? campaignCardHtml(live) : '<p class="empty-state">No active ring yet. Start one and add your first post.</p>'}
@@ -451,15 +462,15 @@ export function mount(rootEl, ctx) {
   function renderCreate() {
     rootEl.innerHTML = `
       <section class="campaign-create">
-        <h2>Start a campaign</h2>
-        <p>For <strong>${esc(store.game.name)}</strong>. Start a ring with your founding post &mdash; add more posts as you build, no window, no deadline.</p>
+        <h2>${esc(START_RING.button)}</h2>
+        <p>For <strong>${esc(store.game.name)}</strong>. Paste the link to one post about your game, then you get an invite link to send to other devs. No window, no deadline: add more posts as you build.</p>
         ${ctx && ctx.formatId ? `<p class="format-preselected">Running the format: <strong>${esc(ctx.formatTagline || ctx.formatId)}</strong> &mdash; your ring&rsquo;s posts follow it in your own words.</p>` : ''}
         <form id="campaign-create-form">
           <p class="form-error" id="create-errors" hidden></p>
-          <label>Campaign title
+          <label>Ring name
             <input type="text" name="title" required autocomplete="off" placeholder="e.g. Devlog &amp; launch ring">
           </label>
-          <label>First post platform
+          <label>Where is your post?
             <select name="platform">
               <option value="x">X</option>
               <option value="bluesky">Bluesky</option>
@@ -471,16 +482,16 @@ export function mount(rootEl, ctx) {
               <option value="other">Other</option>
             </select>
           </label>
-          <label>First post URL
+          <label>Link to your post
             <input type="url" name="url" required placeholder="https://x.com/.../status/..." autocomplete="off">
           </label>
-          <label>First post text or context
+          <label>What the post says
             <textarea name="text" required rows="3" placeholder="Paste the post text (required for X / Bluesky) or a line of context"></textarea>
           </label>
-          <label>First post author
+          <label>Your handle on that post
             <input type="text" name="author" required placeholder="@yourhandle" value="${esc(store.me?.handle || '')}" autocomplete="off">
           </label>
-          <button type="submit">Create campaign</button>
+          <button type="submit" class="primary">Start my ring</button>
           <button type="button" id="create-cancel">Cancel</button>
         </form>
       </section>`;
@@ -500,12 +511,12 @@ export function mount(rootEl, ctx) {
         author: String(data.get('author') || '').trim(),
       };
       const errors = [];
-      if (!title) errors.push('Campaign title is required.');
-      if (!anchorPost.url) errors.push('First post URL is required.');
+      if (!title) errors.push('Ring name is required.');
+      if (!anchorPost.url) errors.push('The link to your post is required.');
       if (!anchorPost.text && (anchorPost.platform === 'x' || anchorPost.platform === 'bluesky')) {
         errors.push('Post text is required for X and Bluesky posts.');
       }
-      if (!anchorPost.author) errors.push('First post author is required.');
+      if (!anchorPost.author) errors.push('Your handle on that post is required.');
       const errEl = rootEl.querySelector('#create-errors');
       if (errors.length) {
         errEl.textContent = errors.join(' ');

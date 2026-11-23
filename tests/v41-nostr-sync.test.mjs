@@ -320,3 +320,20 @@ test("publishCampaign signs with campaign key, filters by handle when given, and
   const { key: _ignored, ...readOnly } = c;
   await assert.rejects(() => N.publishCampaign(client, readOnly, { handle: "@a" }));
 });
+
+test("applyRelayEvents adopts a valid formatId and re-tags on republish; invalid formatId ignored", async () => {
+  const c = mkCampaign({ formatId: "fmt_algoigno" });
+  const ce = await N.signEvent(N.campaignEvent(c, { createdAt: 1000 }), c.key);
+  assert.deepEqual(ce.tags.find((t) => t[0] === "t" && t[1].startsWith("cabal:format:")), ["t", "cabal:format:fmt_algoigno"]);
+  const out = N.applyRelayEvents([], [ce]);
+  assert.equal(out.applied, 1);
+  assert.equal(out.campaigns[0].formatId, "fmt_algoigno");
+  // Round-trip: republishing the synced ring keeps the format tag.
+  const re = N.campaignEvent(out.campaigns[0], { createdAt: 2000 });
+  assert.deepEqual(re.tags.find((t) => t[0] === "t" && t[1].startsWith("cabal:format:")), ["t", "cabal:format:fmt_algoigno"]);
+  // Invalid formatId is ignored, not adopted.
+  const bad = mkCampaign({ formatId: "bogus" });
+  const badEv = await N.signEvent(N.campaignEvent(bad, { createdAt: 1000 }), bad.key);
+  const out2 = N.applyRelayEvents([], [badEv]);
+  assert.equal(out2.campaigns[0].formatId, undefined);
+});
