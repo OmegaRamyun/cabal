@@ -24,6 +24,26 @@ export const KINDLE_MIN_WORDS = 5;
 // on hash variance, and trimming a draft to 5 words kindled too.)
 export const KINDLE_MAX_KEPT = 0.6;
 export const DISCOVERY_MILESTONE = 3;
+// Kindled drafts on this many DIFFERENT posts light "Steady Flame". A
+// threshold on a boolean milestone, never a displayed count.
+export const STEADY_FLAME_MILESTONE = 2;
+
+/** Composite per-post journal key: `<campaignId>:<postId>`. */
+export function postKey(campaignId, postId) {
+  const c = String(campaignId ?? "").trim();
+  const p = String(postId ?? "").trim();
+  return c && p ? `${c}:${p}` : "";
+}
+
+// The ring's first-post keys, from ctx. Accepts an array of composite keys
+// or an object map of key -> truthy. Absent ctx means "unknown", so no
+// kindle can be proven to be on a later post.
+function firstPostSet(ctx) {
+  const src = ctx && ctx.firstPostIds;
+  if (Array.isArray(src)) return new Set(src.map(String));
+  if (src && typeof src === "object") return new Set(Object.keys(src).filter((k) => src[k]));
+  return new Set();
+}
 
 // Self-chosen, cosmetic. Never gated by anything the user has done.
 export const TITLES = Object.freeze([
@@ -75,8 +95,30 @@ export const MILESTONES = Object.freeze([
   Object.freeze({
     id: "rest-point",
     label: "Rest Point",
-    note: "You finished the pre-post checklist for a campaign.",
+    note: "You finished the pre-post checklist for a post.",
     test: (j) => Object.keys(j.restPoints).length >= 1,
+  }),
+  Object.freeze({
+    id: "second-wind",
+    label: "Second Wind",
+    note: "You reworked a draft on a post that was not the ring's first.",
+    test: (j, ctx) => {
+      const first = firstPostSet(ctx);
+      if (first.size === 0) return false; // no ring context: cannot prove a later post
+      return Object.keys(j.kindled).some((k) => k.includes(":") && !first.has(k));
+    },
+  }),
+  Object.freeze({
+    id: "pass-it-on",
+    label: "Pass It On",
+    note: "You passed a ringmate's post on to your own #Ring channel.",
+    test: (j) => Object.keys(j.passedOn).length >= 1,
+  }),
+  Object.freeze({
+    id: "steady-flame",
+    label: "Steady Flame",
+    note: "You reworked drafts on two different posts.",
+    test: (j) => Object.keys(j.kindled).length >= STEADY_FLAME_MILESTONE,
   }),
 ]);
 
@@ -110,6 +152,7 @@ export function createJournal(initial = {}) {
     pagesRead: cleanSet(s.pagesRead),
     discovered: cleanSet(s.discovered),
     restPoints: cleanSet(s.restPoints),
+    passedOn: cleanSet(s.passedOn),
     kindled,
     title: TITLE_IDS.has(s.title) ? s.title : DEFAULT_TITLE,
   };
@@ -130,11 +173,14 @@ export function markDiscovered(journal, campaignId) {
 }
 
 /**
- * A rest point is earned only when the user's own checklist for that
- * campaign is complete. `checklist` is the state object from checklist.mjs.
+ * A rest point is earned only when the user's own checklist is complete.
+ * Per post: the key is `<campaignId>:<postId>`, so finishing one post's
+ * checklist never lights another. A bare campaignId (no postId) keeps
+ * the legacy per-campaign key. `checklist` is the state object from
+ * checklist.mjs.
  */
-export function markRestPoint(journal, campaignId, checklist) {
-  const id = cleanId(campaignId);
+export function markRestPoint(journal, campaignId, checklist, postId) {
+  const id = postId ? postKey(campaignId, postId) : cleanId(campaignId);
   const j = createJournal(journal);
   if (id && checklist && isCampaignChecklistReady(checklist)) j.restPoints[id] = true;
   return j;
@@ -188,6 +234,17 @@ export function kindleDraft(journal, draftId, { anchor, before, after } = {}) {
   return { journal: j, result };
 }
 
+/**
+ * "I passed a ringmate's post on" — self-reported, boolean, private. No
+ * link, no count, no check: it only records that the user says they did.
+ */
+export function markPassedOn(journal, campaignId, postId) {
+  const key = postKey(campaignId, postId);
+  const j = createJournal(journal);
+  if (key) j.passedOn[cleanId(key)] = true;
+  return j;
+}
+
 export function chooseTitle(journal, titleId) {
   const j = createJournal(journal);
   if (TITLE_IDS.has(titleId)) j.title = titleId;
@@ -204,7 +261,7 @@ export function chooseTitle(journal, titleId) {
  * only: it never touches the textarea's value and never blocks anything.
  * Returns { destroy() }.
  */
-export function trackRevision(textarea, { anchorText, draftId, onKindled, storage } = {}) {
+export function trackRevision(textarea, { anchorText, draftId, onKindled, storage, firstPostIds } = {}) {
   if (!textarea || typeof textarea.addEventListener !== "function") {
     return { destroy() {} };
   }
@@ -222,7 +279,7 @@ export function trackRevision(textarea, { anchorText, draftId, onKindled, storag
     }
     const r = assessRevision(anchorText, flagged, current);
     if (r.kindled) {
-      const recorded = record("revise", { draftId, anchor: anchorText, before: flagged, after: current }, storage);
+      const recorded = record("revise", { draftId, anchor: anchorText, before: flagged, after: current, firstPostIds }, storage);
       flagged = null;
       // Fire only when the milestone is new — a later rework of the same
       // draft re-kindles the assessment but is already in the journal.
@@ -283,16 +340,22 @@ export function saveJournal(journal, storage) {
   try { if (s) s.setItem(JOURNAL_KEY, JSON.stringify(createJournal(journal))); } catch { /* ignore */ }
 }
 
-/** Load the user's checklist state for one campaign (own key only). */
-export function loadCampaignChecklist(campaignId, storage) {
+/**
+ * Load the user's checklist state (own key only). With a postId this is
+ * the per-post key (`cabal.v2.checklist.<campaignId>.<postId>`); without
+ * one it is the legacy campaign key.
+ */
+export function loadCampaignChecklist(campaignId, storage, postId) {
   const s = resolveStorage(storage);
-  try { return s ? JSON.parse(s.getItem(checklistKey(campaignId))) : null; } catch { return null; }
+  try { return s ? JSON.parse(s.getItem(checklistKey(campaignId, postId))) : null; } catch { return null; }
 }
 
 /**
  * record(kind, payload, storage) — load, apply one of the user's own
- * craft actions, save. kinds: page, discover, rest, revise.
- * Call sites: intro pages, discovery view, checklist, composer.
+ * craft actions, save. kinds: page, discover, rest, revise, passon.
+ * rest / revise / passon are per post: payload carries { campaignId,
+ * postId } (revise carries draftId = `<campaignId>:<postId>`).
+ * Call sites: intro pages, discovery view, checklist, composer, feed.
  */
 export function record(kind, payload = {}, storage) {
   if (payload == null) payload = {};
@@ -302,8 +365,14 @@ export function record(kind, payload = {}, storage) {
   if (kind === "page") j = markPageRead(j, payload.pageId);
   else if (kind === "discover") j = markDiscovered(j, payload.campaignId);
   else if (kind === "rest") {
-    j = markRestPoint(j, payload.campaignId, payload.checklist ?? loadCampaignChecklist(payload.campaignId, storage));
-  } else if (kind === "revise") {
+    j = markRestPoint(
+      j,
+      payload.campaignId,
+      payload.checklist ?? loadCampaignChecklist(payload.campaignId, storage, payload.postId),
+      payload.postId
+    );
+  } else if (kind === "passon") j = markPassedOn(j, payload.campaignId, payload.postId);
+  else if (kind === "revise") {
     const r = kindleDraft(j, payload.draftId, payload);
     j = r.journal;
     result = r.result;
@@ -333,7 +402,7 @@ export function mount(rootEl, ctx = {}) {
 
   const render = () => {
     rootEl.textContent = "";
-    const prog = computeProgress(journal, { pageIds });
+    const prog = computeProgress(journal, { pageIds, firstPostIds: ctx.firstPostIds });
     const section = el(doc, "section", null, "cabal-journal");
     section.appendChild(el(doc, "h2", "Field journal", "journal-title"));
     section.appendChild(el(doc, "p", "Yours alone. Kept in this browser. Never shown to the ring.", "journal-note"));
