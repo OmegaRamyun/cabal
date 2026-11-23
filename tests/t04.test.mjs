@@ -90,10 +90,19 @@ test('defaults use MiniLM-L6-v2 and engine starts disabled with silent degradati
     degradedReason: null,
   });
 
-  // Never blocks when disabled or when Worker is unavailable (Node env)
+  // Never blocks when disabled or when Worker is unavailable (Node env).
+  // The fallback DELEGATES to the T03 lexical gate when ./similarity.mjs
+  // is present (on main), so the verdict is the gate's verdict — 'pass'
+  // for these unrelated drafts. The canned 'review' only applies when the
+  // module is absent (as it was on the T04 branch).
   const disabledCheck = await engine.checkDraft('my draft', ['other draft']);
   assert.equal(disabledCheck.mode, 'lexical-fallback');
-  assert.equal(disabledCheck.verdict, 'review');
+  assert.equal(disabledCheck.verdict, 'pass');
+
+  // Delegation proof: an identical draft blocks through the fallback.
+  const copiedCheck = await engine.checkDraft('other draft', ['other draft']);
+  assert.equal(copiedCheck.mode, 'lexical-fallback');
+  assert.equal(copiedCheck.verdict, 'block');
 
   const enabledState = await engine.enable();
   assert.equal(enabledState.status, 'degraded');
