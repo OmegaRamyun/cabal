@@ -251,6 +251,15 @@ pre {
   color: var(--cabal-posted);
 }
 
+/* ---- V37: pass-it-on nudge under the ring list ---- */
+.ring-pass-on {
+  color: var(--pico-muted-color);
+  font-size: 0.9rem;
+  border-top: 1px solid var(--pico-muted-border-color);
+  padding-top: 0.75rem;
+  margin-top: 0.75rem;
+}
+
 /* ---- composer: anchor card, gate, intent links ---- */
 .quote-anchor {
   background: var(--pico-card-sectioning-background-color);

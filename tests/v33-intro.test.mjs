@@ -47,6 +47,25 @@ test("routes exist and resolve to their page ids", () => {
   assert.equal(introPageIdForRoute("#/x"), null);
 });
 
+test("how page teaches passing it on, with the #Ring channel named", () => {
+  const how = getIntroPage("how");
+  assert.match(how.lede, /Six steps/);
+  const step = how.sections.find((s) => s.heading.startsWith("6."));
+  assert.ok(step, "step 6 exists");
+  assert.match(step.heading, /Pass it on/);
+  const text = step.paragraphs.join(" ");
+  assert.match(text, /#Ring channel/);
+  assert.match(text, /where your people actually are/);
+  assert.match(text, /no one counts it/);
+  const theory = getIntroPage("theory");
+  const section = theory.sections.find((s) => /Pass it on/i.test(s.heading));
+  assert.ok(section, "theory pass-it-on section exists");
+  const ttext = section.paragraphs.join(" ");
+  assert.match(ttext, /copies a post's link and shares it onward/);
+  assert.match(ttext, /#Ring channel/);
+  assert.match(ttext, /No one counts shares/);
+});
+
 test("routes tolerate a trailing slash (verifier fix)", () => {
   assert.equal(introPageIdForRoute("#/intro/"), "intro");
   assert.equal(introPageIdForRoute("#/intro/how/"), "how");

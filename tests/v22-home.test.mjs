@@ -15,6 +15,7 @@ import {
   validateGameSetup,
   yourTurn,
 } from '../src/home.mjs';
+import { hasQuotablePost } from '../src/campaign-page.mjs';
 
 const game = {
   name: 'Test Game',
@@ -198,4 +199,12 @@ test('addMember: appends pending, dedupes by handle, no mutation', () => {
   // never the same reference).
   assert.deepEqual(addMember(joined, { name: 'Pal again', handle: '@pal' }), joined);
   assert.notEqual(addMember(joined, { name: 'Pal again', handle: '@pal' }), joined);
+});
+
+test('hasQuotablePost: true only with a posted member holding a quote link', () => {
+  assert.equal(hasQuotablePost(campaign()), true);
+  assert.equal(hasQuotablePost(campaign({ members: [{ name: 'Pal', handle: '@pal', status: 'pending' }] })), false);
+  assert.equal(hasQuotablePost(campaign({ members: [{ name: 'Dev', handle: '@dev', status: 'posted' }] })), false);
+  assert.equal(hasQuotablePost(campaign({ members: [] })), false);
+  assert.equal(hasQuotablePost(null), false);
 });

@@ -47,7 +47,7 @@ export const INTRO_PAGES = [
     id: "how",
     route: "#/intro/how",
     title: "How a campaign works",
-    lede: "Five steps. None of them post on your behalf.",
+    lede: "Six steps. None of them post on your behalf.",
     sections: [
       {
         heading: "1. Make a campaign",
@@ -77,6 +77,13 @@ export const INTRO_PAGES = [
         heading: "5. The page shows who has posted",
         paragraphs: [
           "Once you have posted, you add your quote-post link, and you are marked as posted on the ring.",
+        ],
+      },
+      {
+        heading: "6. Pass it on",
+        paragraphs: [
+          "Open a ringmate's quote-post from the campaign page. If it speaks to you, share its link onward — drop it in your own #Ring channel, your Discord or community channel where your people actually are, or wherever else your community gathers, with a line of your own.",
+          "A post passed on by a real reader travels further than the anchor alone. Only what you genuinely like; no one counts it, and no one owes it.",
         ],
       },
       {
@@ -140,6 +147,13 @@ export const INTRO_PAGES = [
         heading: "Why a quote-post and not a plain repost",
         paragraphs: [
           "A plain repost is one signal, and a stack of them tends to collapse into a single feed candidate. A quote-post carries your own words, so it reaches your followers as something you said. A bare \"Big news!\" does not count: add something real.",
+        ],
+      },
+      {
+        heading: "Pass it on: the post travels further than the anchor",
+        paragraphs: [
+          "Once a ringmate has quote-posted, their post is its own thing — and it can travel on its own. When a reader copies a post's link and shares it onward, that carries real weight: a human chose to pass it on, not a button.",
+          "So open your ringmates' quote-posts. If one speaks to you, share its link in your own #Ring channel or wherever your people gather, in your own words. That is the second half of the ring: the anchor starts it, the ringmates' posts carry it. Only ever what you genuinely like. No one counts shares, and no one owes any.",
         ],
       },
       {
