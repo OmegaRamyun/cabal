@@ -83,6 +83,106 @@ export function getChecklistSummary(state) {
   };
 }
 
+// --- v0.2: per-campaign checklist state (V26) ---
+
+export const CAMPAIGN_CHECKLIST_STORAGE_PREFIX = 'cabal.v2.checklist.';
+
+export const CAMPAIGN_CHECKLIST_ITEMS = Object.freeze([
+  Object.freeze({ id: 'anchorLink', label: 'Anchor post link works' }),
+  Object.freeze({
+    id: 'ownWordsEveryMember',
+    label: "Every member's quote is in their own words",
+  }),
+]);
+
+const CAMPAIGN_CHECKLIST_IDS = new Set(
+  CAMPAIGN_CHECKLIST_ITEMS.map((item) => item.id)
+);
+
+/**
+ * Storage key for one campaign's checklist state. Two campaigns never
+ * share a key, so their states never collide.
+ */
+export function checklistKey(campaignId) {
+  const id = String(campaignId ?? '')
+    .trim()
+    .replace(/[^A-Za-z0-9_-]/g, '-');
+  return `${CAMPAIGN_CHECKLIST_STORAGE_PREFIX}${id}`;
+}
+
+/**
+ * The checklist items for a campaign: the 6 standard pre-post items plus
+ * the campaign-specific items. `campaign` is accepted for future
+ * per-campaign variance; the item set is the same for every campaign today.
+ */
+export function campaignChecklistItems(campaign) {
+  void campaign;
+  return [...CHECKLIST_ITEMS, ...CAMPAIGN_CHECKLIST_ITEMS];
+}
+
+function createCampaignChecklistState(initial = {}) {
+  const source = initial && typeof initial === 'object' ? initial : {};
+  const state = {};
+  for (const item of campaignChecklistItems()) {
+    state[item.id] = Boolean(source[item.id]);
+  }
+  return state;
+}
+
+/**
+ * Create a fresh per-campaign checklist: `{ campaignId, key, state }`.
+ * `state` covers all 8 campaign checklist items, all unchecked by default.
+ * Each call returns an independent state object — two campaigns never
+ * share state.
+ */
+export function createCampaignChecklist(campaignId, initial = {}) {
+  return {
+    campaignId: String(campaignId ?? ''),
+    key: checklistKey(campaignId),
+    state: createCampaignChecklistState(initial),
+  };
+}
+
+/**
+ * Return a new campaign checklist with `id` updated, ignoring unknown ids.
+ */
+export function toggleCampaignChecklistItem(checklist, id, checked) {
+  const source =
+    checklist && typeof checklist === 'object' ? checklist : {};
+  const nextState = createCampaignChecklistState(source.state);
+  if (
+    !CHECKLIST_IDS.has(id) &&
+    !CAMPAIGN_CHECKLIST_IDS.has(id)
+  ) {
+    return { ...source, state: nextState };
+  }
+  nextState[id] =
+    checked === undefined ? !nextState[id] : Boolean(checked);
+  return { ...source, state: nextState };
+}
+
+/**
+ * Return true iff all 8 campaign checklist items are checked.
+ */
+export function isCampaignChecklistReady(checklist) {
+  const state = createCampaignChecklistState(
+    checklist && typeof checklist === 'object' ? checklist.state : {}
+  );
+  return campaignChecklistItems().every(
+    (item) => state[item.id] === true
+  );
+}
+
+/**
+ * Return the array of unchecked `{ id, label }` campaign items, in order.
+ */
+export function getCampaignMissingItems(checklist) {
+  const state = createCampaignChecklistState(
+    checklist && typeof checklist === 'object' ? checklist.state : {}
+  );
+  return campaignChecklistItems().filter((item) => !state[item.id]);
+}
+
 /**
  * Normalize a single Voice Card entry into `{ link, text }`.
  */

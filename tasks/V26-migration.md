@@ -2,7 +2,7 @@
 
 Scope: make the kept Stage 1 modules campaign-aware; document the re-homing.
 Files owned: `src/checklist.mjs`, `src/discord.mjs`, `tests/v26-migration.test.mjs`
-Status: open
+Status: claimed
 Branch: `task/V26-migration`
 
 ## Frozen contract
