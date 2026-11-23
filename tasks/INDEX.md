@@ -40,6 +40,10 @@ harness, other tasks own their test files.
 | V30 | Navbar: icon top bar, Tools & Terms gear menu | `index.html`, `style.css`, `app.js`, `tests/v30-navbar.test.mjs`, `tasks/V30-navbar.md`, `version.json` | done | `task/V30-navbar` |
 | V31 | Atom discovery feed (`campaigns.atom`) | `src/atom.mjs`, `scripts/generate-atom.mjs`, `campaigns.atom`, `tests/v31-atom.test.mjs`, `index.html`, `version.json` | done | `task/V31-atom` |
 | V32 | ToonSouls example campaign (for the bit) | `data/campaigns.json`, `campaigns.atom`, `tasks/V32-toonsouls.md`, `version.json` | done | `task/V32-toonsouls` |
+| V33 | Intro pages: what Cabal is, how it works, the theory | `src/intro.mjs`, `tests/v33-intro.test.mjs`, `tasks/V33-intro-pages.md` | done | `task/V33-intro-pages` |
+| V34 | Shadow Cabal background: gradient-noise canvas + scrim | `src/background.mjs`, `tests/v34-background.test.mjs`, `tasks/V34-shadow-background.md` | done | `task/V34-shadow-background` |
+| V35 | Field journal gamification (craft only, no quotas/ledgers) | `src/gamify.mjs`, `tests/v35-gamify.test.mjs`, `tasks/V35-gamification.md` | done | `task/V35-gamification` |
+| V36 | Integration: wire V33/V34/V35 into the shell, Souls theme | `index.html`, `style.css`, `app.js`, `tasks/V36-integration.md`, `src/store.mjs`, `src/gamify.mjs`, `src/checklist.mjs`, `tests/t01.test.mjs`, `tests/v21-campaign.test.mjs`, `tests/v26-migration.test.mjs`, `tests/v30-navbar.test.mjs`, `tests/v35-gamify.test.mjs`, `version.json` | done | `task/V36-integration` |
 
 Coordinator owns the shell (`index.html`, `style.css`, `app.js`), the merge,
 and the end-to-end Playwright check. Tracks build modules + tests only and

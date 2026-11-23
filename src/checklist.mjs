@@ -272,6 +272,46 @@ export function parseVoiceCard(raw) {
   }
 }
 
+function resolveChecklistStorage(storage) {
+  if (storage && typeof storage.getItem === "function") return storage;
+  try {
+    const ls = globalThis.localStorage;
+    if (ls && typeof ls.getItem === "function") return ls;
+  } catch { /* no storage */ }
+  return null;
+}
+
+/**
+ * Load a campaign's checklist from storage (own key only,
+ * `cabal.v2.checklist.<id>`). Returns the { campaignId, key, state }
+ * object — fresh (all unchecked) when nothing is stored or the stored
+ * JSON is corrupt. Tolerates a bare state object as well as the full
+ * { campaignId, key, state } shape.
+ */
+export function loadCampaignChecklistState(campaignId, storage) {
+  const s = resolveChecklistStorage(storage);
+  let stored = null;
+  try {
+    const raw = s ? s.getItem(checklistKey(campaignId)) : null;
+    stored = raw ? JSON.parse(raw) : null;
+  } catch {
+    stored = null;
+  }
+  const initial =
+    stored && typeof stored === "object" ? (stored.state ?? stored) : {};
+  return createCampaignChecklist(campaignId, initial);
+}
+
+/** Save a campaign checklist object to its own storage key. */
+export function saveCampaignChecklistState(checklist, storage) {
+  const s = resolveChecklistStorage(storage);
+  try {
+    if (s && checklist && checklist.campaignId) {
+      s.setItem(checklistKey(checklist.campaignId), JSON.stringify(checklist));
+    }
+  } catch { /* ignore storage errors */ }
+}
+
 function loadVoiceCardFromStorage() {
   try {
     const raw = window.localStorage.getItem(VOICE_CARD_STORAGE_KEY);
@@ -294,15 +334,34 @@ function saveVoiceCardToStorage(entries) {
 
 /**
  * Mount the pre-post checklist and local Voice Card UI into `rootEl`.
+ * Optional ctx (V36, additive — no ctx means the v0.1 in-memory 6-item
+ * list, exactly as before):
+ *   campaignId — per-campaign mode: the 8-item checklist, persisted
+ *     under `cabal.v2.checklist.<id>`.
+ *   storage — storage-like object for the campaign state (tests);
+ *     defaults to localStorage.
+ *   onReadyChange(ready, checklist) — called when campaign readiness
+ *     flips (and once on mount with the loaded state); the field
+ *     journal's Rest Point listens here.
  */
-export function mount(rootEl) {
+export function mount(rootEl, ctx = {}) {
   if (!rootEl) {
     return;
   }
 
   const doc = rootEl.ownerDocument;
-  let checklistState = createChecklistState();
+  const campaignId = ctx.campaignId ? String(ctx.campaignId).trim() : "";
+  const isCampaign = campaignId.length > 0;
+  const storage = resolveChecklistStorage(ctx.storage);
+  const items = isCampaign ? campaignChecklistItems() : CHECKLIST_ITEMS;
+  let campaignChecklist = isCampaign
+    ? loadCampaignChecklistState(campaignId, storage)
+    : null;
+  let checklistState = isCampaign
+    ? createCampaignChecklistState(campaignChecklist.state)
+    : createChecklistState();
   let voiceCard = loadVoiceCardFromStorage();
+  let prevReady = null;
 
   rootEl.textContent = '';
 
@@ -334,7 +393,7 @@ export function mount(rootEl) {
 
   const checkboxes = new Map();
 
-  for (const item of CHECKLIST_ITEMS) {
+  for (const item of items) {
     const li = doc.createElement('li');
     const label = doc.createElement('label');
     label.style.display = 'flex';
@@ -351,11 +410,21 @@ export function mount(rootEl) {
     checkbox.style.minHeight = '24px';
 
     checkbox.addEventListener('change', () => {
-      checklistState = toggleChecklistItem(
-        checklistState,
-        item.id,
-        checkbox.checked
-      );
+      if (isCampaign) {
+        campaignChecklist = toggleCampaignChecklistItem(
+          campaignChecklist,
+          item.id,
+          checkbox.checked
+        );
+        checklistState = createCampaignChecklistState(campaignChecklist.state);
+        saveCampaignChecklistState(campaignChecklist, storage);
+      } else {
+        checklistState = toggleChecklistItem(
+          checklistState,
+          item.id,
+          checkbox.checked
+        );
+      }
       renderChecklistStatus();
     });
 
@@ -377,8 +446,14 @@ export function mount(rootEl) {
   resetBtn.style.minHeight = '44px';
   resetBtn.style.minWidth = '44px';
   resetBtn.addEventListener('click', () => {
-    checklistState = createChecklistState();
-    for (const item of CHECKLIST_ITEMS) {
+    if (isCampaign) {
+      campaignChecklist = createCampaignChecklist(campaignId);
+      checklistState = createCampaignChecklistState(campaignChecklist.state);
+      saveCampaignChecklistState(campaignChecklist, storage);
+    } else {
+      checklistState = createChecklistState();
+    }
+    for (const item of items) {
       const cb = checkboxes.get(item.id);
       if (cb) {
         cb.checked = false;
@@ -389,13 +464,33 @@ export function mount(rootEl) {
   checklistSection.appendChild(resetBtn);
 
   function renderChecklistStatus() {
-    const summary = getChecklistSummary(checklistState);
-    if (summary.ready) {
-      statusEl.textContent = `Ready (${summary.checkedCount}/${summary.totalCount} checked).`;
+    let ready;
+    let checkedCount;
+    let totalCount;
+    let missingCount;
+    if (isCampaign) {
+      const missing = getCampaignMissingItems({ state: checklistState });
+      totalCount = items.length;
+      missingCount = missing.length;
+      checkedCount = totalCount - missingCount;
+      ready = missingCount === 0;
+    } else {
+      const summary = getChecklistSummary(checklistState);
+      ready = summary.ready;
+      checkedCount = summary.checkedCount;
+      totalCount = summary.totalCount;
+      missingCount = summary.missing.length;
+    }
+    if (ready) {
+      statusEl.textContent = `Ready (${checkedCount}/${totalCount} checked).`;
       statusEl.dataset.ready = 'true';
     } else {
-      statusEl.textContent = `Not ready (${summary.checkedCount}/${summary.totalCount} checked, ${summary.missing.length} remaining).`;
+      statusEl.textContent = `Not ready (${checkedCount}/${totalCount} checked, ${missingCount} remaining).`;
       statusEl.dataset.ready = 'false';
+    }
+    if (isCampaign && typeof ctx.onReadyChange === 'function' && ready !== prevReady) {
+      prevReady = ready;
+      ctx.onReadyChange(ready, { state: checklistState });
     }
   }
 

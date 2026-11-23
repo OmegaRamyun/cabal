@@ -26,6 +26,13 @@ test('parseHash: discover, tools, terms', () => {
   assert.deepEqual(parseHash('#/terms'), { view: 'terms' });
 });
 
+test('parseHash: intro pages carry the page id', () => {
+  assert.deepEqual(parseHash('#/intro'), { view: 'intro', pageId: 'intro' });
+  assert.deepEqual(parseHash('#/intro/how'), { view: 'intro', pageId: 'how' });
+  assert.deepEqual(parseHash('#/intro/theory'), { view: 'intro', pageId: 'theory' });
+  assert.deepEqual(parseHash('#/intro/'), { view: 'intro', pageId: 'intro' });
+});
+
 test('parseHash: link intent keeps the whole hash for the decoder', () => {
   const hash = '#c=eyJpZCI6ImNtcF94In0';
   assert.deepEqual(parseHash(hash), { view: 'link', hash });

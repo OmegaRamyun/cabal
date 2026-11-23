@@ -377,6 +377,160 @@ pre {
   .ring-member { gap: 0.25rem 0.4rem; }
 }
 
+/* ---- V36: Dark Souls menu theme (forced dark via data-theme="dark") ---- */
+[data-theme="dark"] {
+  --cabal-ground: #0b0908;
+  --cabal-panel: #14100d;
+  --cabal-hairline: #2a211a;
+  --cabal-ember: #c8501e;
+  --cabal-ember-deep: #a84318;
+  --cabal-gold: #c9a24a;
+  --cabal-bone: #d8cfc0;
+  --cabal-muted: #9a8f7e;
+  --cabal-ember-glow: rgba(200, 80, 30, 0.25);
+  --cabal-display: "Cinzel", "Trajan Pro", "Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --cabal-serif-body: Georgia, "Times New Roman", serif;
+
+  /* Pico ground: page, cards, borders, text, links, buttons. */
+  --pico-background-color: #0b0908;
+  --pico-card-background-color: #14100d;
+  --pico-muted-border-color: #2a211a;
+  --pico-color: #d8cfc0;
+  --pico-muted-color: #9a8f7e;
+  --pico-primary: #c9a24a;
+  --pico-primary-background: #c8501e;
+  --pico-primary-border: #c8501e;
+  --pico-primary-hover-background: #a84318;
+  --pico-primary-hover-border: #a84318;
+  --pico-primary-inverse: #f5ead9;
+}
+
+/* Display type: serif headings + gold wordmark. Body stays Pico sans,
+   except the intro pages, which read in serif (V33 tokens). */
+.brand {
+  font-family: var(--cabal-display);
+  letter-spacing: 0.06em;
+  color: var(--cabal-gold);
+}
+main h2, main h3 {
+  font-family: var(--cabal-display);
+}
+main h2 { color: var(--cabal-gold); }
+
+/* ---- V34: Shadow Cabal backdrop (canvas + readability scrim) ---- */
+.cabal-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.cabal-bg-canvas,
+.cabal-bg-scrim {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Keep page chrome and content stacked above .cabal-bg */
+main,
+footer,
+#demo-banner,
+#update-banner {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---- V33: intro pages ---- */
+.cabal-intro {
+  background: var(--cabal-panel);
+  border: 1px solid var(--cabal-hairline);
+  border-radius: var(--cabal-radius);
+  padding: 1.5rem;
+}
+.intro-title {
+  font-family: var(--cabal-display);
+  letter-spacing: 0.06em;
+  color: var(--cabal-gold);
+  font-weight: 400;
+}
+.intro-ember-rule {
+  height: 1px;
+  border: 0;
+  width: 60%;
+  margin: 0.75rem auto 1rem;
+  background: linear-gradient(to right, transparent, var(--cabal-ember), transparent);
+}
+.intro-lede {
+  color: var(--cabal-muted);
+  font-style: italic;
+}
+.intro-heading {
+  font-family: var(--cabal-display);
+  letter-spacing: 0.06em;
+  font-weight: 400;
+  color: var(--cabal-gold);
+}
+.intro-text {
+  font-family: var(--cabal-serif-body);
+  font-size: 1.05rem;
+  line-height: 1.7;
+  max-width: 38rem;
+  color: var(--cabal-bone);
+}
+.intro-nav { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--cabal-hairline); }
+.intro-link { color: var(--cabal-muted); text-decoration: none; transition: color 250ms var(--cabal-ease); }
+.intro-link:hover { color: var(--cabal-gold); }
+.intro-current { color: var(--cabal-gold); font-weight: 600; }
+
+/* ---- V35: field journal ---- */
+.journal-title {
+  font-family: var(--cabal-display);
+  letter-spacing: 0.06em;
+  color: var(--cabal-gold);
+  font-weight: 400;
+}
+.journal-note { color: var(--cabal-muted); }
+.journal-title-pick { color: var(--cabal-muted); }
+.journal-primer { color: var(--cabal-muted); }
+.journal-milestones { list-style: none; padding: 0; }
+.journal-milestones li.milestone { padding: 0.375rem 0 0.375rem 0.75rem; }
+.journal-milestones li.milestone.reached {
+  border-left: 3px solid var(--cabal-ember);
+  color: var(--cabal-gold);
+  animation: milestone-in 600ms ease-out both;
+}
+.journal-milestones li.milestone.dim { opacity: 0.45; }
+.milestone-name { font-weight: 600; }
+.milestone-note { color: var(--cabal-muted); font-weight: 400; }
+
+@keyframes milestone-in {
+  from { opacity: 0; }
+}
+
+/* Intro motion: slow page fade, sections stagger-rise. Only when the
+   user has not asked for reduced motion (the global rule zeroes it
+   otherwise). */
+@media (prefers-reduced-motion: no-preference) {
+  #view > .cabal-intro { animation: intro-enter 600ms cubic-bezier(0.2, 0.6, 0.2, 1) both; }
+  .intro-section { animation: intro-section-in 600ms cubic-bezier(0.2, 0.6, 0.2, 1) both; }
+  .intro-section:nth-of-type(2) { animation-delay: 90ms; }
+  .intro-section:nth-of-type(3) { animation-delay: 180ms; }
+  .intro-section:nth-of-type(4) { animation-delay: 270ms; }
+  .intro-section:nth-of-type(5) { animation-delay: 360ms; }
+  .intro-section:nth-of-type(6) { animation-delay: 450ms; }
+  .intro-section:nth-of-type(7) { animation-delay: 540ms; }
+  .intro-section:nth-of-type(8) { animation-delay: 630ms; }
+}
+@keyframes intro-enter {
+  from { opacity: 0; }
+}
+@keyframes intro-section-in {
+  from { opacity: 0; transform: translateY(8px); }
+}
+
 /* ---- reduced motion: everything snaps to its final state ---- */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

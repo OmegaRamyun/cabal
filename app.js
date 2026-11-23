@@ -7,6 +7,7 @@
 //   #/discover            similar + popular campaigns
 //   #/tools               campaign tools (Kickstarter, Steam, Discord, checklist)
 //   #/terms               disclaimers and terms
+//   #/intro[/how|/theory] intro pages — what Cabal is, how it works, the theory
 //   #c=<payload>          link intent — opens the app straight into a campaign
 
 import { createStore } from './src/store.mjs';
@@ -22,6 +23,9 @@ import * as discord from './src/discord.mjs';
 import * as kickstarter from './src/kickstarter.mjs';
 import * as steam from './src/steam.mjs';
 import * as checklist from './src/checklist.mjs';
+import * as intro from './src/intro.mjs';
+import * as background from './src/background.mjs';
+import * as gamify from './src/gamify.mjs';
 
 const backend = createStore();
 
@@ -77,13 +81,16 @@ export function parseHash(hash = '') {
   if (view === 'discover') return { view: 'discover' };
   if (view === 'tools') return { view: 'tools' };
   if (view === 'terms') return { view: 'terms' };
+  if (view === 'intro') {
+    return { view: 'intro', pageId: param || 'intro' };
+  }
   return { view: 'home' };
 }
 
 /**
  * navItemForView(view) -> 'home' | 'discover' | 'tools' — which top-bar
- * item is current for a route. Campaign, composer and link-intent land
- * on Home; Terms lives under the Tools gear menu. Pure, tested.
+ * item is current for a route. Campaign, composer, intro and link-intent
+ * land on Home; Terms lives under the Tools gear menu. Pure, tested.
  */
 export function navItemForView(view = '') {
   if (view === 'discover') return 'discover';
@@ -178,6 +185,16 @@ function renderCampaign(view, id) {
     }
     view.textContent = '';
     campaignPage.mount(view, { store, navigate, campaign });
+    // Kindled hook for the inline composer (pending members): the composer
+    // mounts synchronously inside #campaign-composer, so the textarea is
+    // queryable right after mount. No V22 file touched.
+    const inlineTextarea = view.querySelector('#campaign-composer textarea');
+    if (inlineTextarea) {
+      gamify.trackRevision(inlineTextarea, {
+        anchorText: campaign.anchorPost?.text ?? '',
+        draftId: `composer:${campaign.id}`,
+      });
+    }
   });
 }
 
@@ -188,7 +205,7 @@ function renderComposer(view, id) {
       return;
     }
     view.textContent = '';
-    quoteComposer.mount(view, {
+    const handle = quoteComposer.mount(view, {
       campaign,
       me: store.me,
       onPosted: (quoteUrl, draft) => {
@@ -208,6 +225,24 @@ function renderComposer(view, id) {
         navigate('campaign', { campaignId: id });
       },
     });
+    // Kindled: watch this draft for a flagged-then-genuinely-reworked revision.
+    if (handle && handle.textarea) {
+      gamify.trackRevision(handle.textarea, {
+        anchorText: campaign.anchorPost?.text ?? '',
+        draftId: `composer:${campaign.id}`,
+      });
+    }
+    // Rest Point: the per-campaign pre-post checklist, persisted under
+    // cabal.v2.checklist.<id>. The Voice Card rides along as a local
+    // reference while writing. Ready -> record("rest").
+    const checkSlot = document.createElement('section');
+    view.appendChild(checkSlot);
+    checklist.mount(checkSlot, {
+      campaignId: id,
+      onReadyChange: (ready) => {
+        if (ready) gamify.record('rest', { campaignId: id });
+      },
+    });
   });
 }
 
@@ -219,10 +254,44 @@ function renderDiscover(view) {
       myTags: (store.game && store.game.tags) || [],
       campaigns: merged,
       navigate: (campaign) => {
+        gamify.record('discover', { campaignId: campaign.id });
         window.location.hash = `#/campaign/${encodeURIComponent(campaign.id)}`;
       },
     });
   });
+}
+
+function renderIntro(view, pageId) {
+  const pageIds = intro.introPageIds();
+  const page = intro.getIntroPage(pageId) || intro.getIntroPage('intro');
+  view.textContent = '';
+  intro.mount(view, page.id);
+  gamify.record('page', { pageId: page.id, pageIds });
+}
+
+/**
+ * renderHomeExtras() — the Home-only slot below #view: a pointer to the
+ * primer + the private field journal. It lives in #home-extras (a sibling
+ * of #view inside <main>), NOT inside #view: home.mjs re-renders by
+ * overwriting #view's innerHTML on interactions, which would wipe
+ * anything appended there. Re-mounted fresh on every route() so the
+ * journal never goes stale; emptied on non-home routes.
+ */
+function renderHomeExtras(view) {
+  const slot = document.querySelector('#home-extras');
+  if (!slot) return;
+  slot.textContent = '';
+  if (view !== 'home') return;
+  const explainer = document.createElement('p');
+  explainer.className = 'explainer';
+  const link = document.createElement('a');
+  link.href = '#/intro';
+  link.textContent = 'What Cabal is';
+  explainer.append('New here? Read ', link, ' — the primer, three short pages.');
+  slot.appendChild(explainer);
+  const journalSlot = document.createElement('div');
+  slot.appendChild(journalSlot);
+  gamify.mount(journalSlot, { pageIds: intro.introPageIds() });
 }
 
 function renderTools(view) {
@@ -279,6 +348,7 @@ async function route() {
   if (!view) return;
   const parsed = parseHash(window.location.hash);
   syncNav(parsed.view);
+  renderHomeExtras(parsed.view);
   if (parsed.view === 'link') {
     const { campaign, error } = decodeCampaignLink(parsed.hash);
     if (error || !campaign) {
@@ -312,6 +382,9 @@ async function route() {
     case 'terms':
       renderTerms(view);
       break;
+    case 'intro':
+      renderIntro(view, parsed.pageId);
+      break;
     case 'home':
     default:
       view.textContent = '';
@@ -341,6 +414,14 @@ function start() {
   demo.seedDemo(globalThis.localStorage);
   renderDemoBanner();
   wireToolsMenu();
+  // Shadow Cabal backdrop (V34): fixed canvas + scrim behind the app.
+  // Mounted once, before the first route; forced dark (see index.html)
+  // keeps the canvas and the cards on the same ground.
+  try {
+    background.mount(document.body, {});
+  } catch {
+    // A failed backdrop must never take the app down.
+  }
   // Auto-updater: version.json baseline at load, 60s poll + focus/visible
   // re-checks, banner only — never a forced reload (see src/updater.mjs).
   const updateEl = document.querySelector('#update-banner');

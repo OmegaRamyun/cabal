@@ -8,6 +8,7 @@ export const KEYS = Object.freeze({
   campaigns: "cabal.v2.campaigns",
   demo: "cabal.v2.demo",
   me: "cabal.v2.me",
+  journal: "cabal.v2.journal",
 });
 
 // Storage-like adapter over a Map (used by createMemoryStore).

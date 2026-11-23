@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark light">
+  <meta name="color-scheme" content="dark">
   <title>Cabal Ring Kit — campaign-first</title>
   <link rel="alternate" type="application/atom+xml" title="Cabal — discover campaigns" href="campaigns.atom">
   <link rel="stylesheet" href="vendor/pico.min.css">
@@ -28,6 +28,7 @@
             <span>Tools &amp; Terms</span>
           </button>
           <div class="nav-menu-list" id="tools-menu-list" role="menu" hidden>
+            <a href="#/intro" role="menuitem">What Cabal is</a>
             <a href="#/tools" role="menuitem">Campaign tools</a>
             <a href="#/terms" role="menuitem">Terms</a>
           </div>
@@ -39,9 +40,10 @@
   </header>
   <main>
     <div id="view"></div>
+    <div id="home-extras"></div>
   </main>
   <footer>
-    <p class="explainer">Cabal is for promoting your own games. A disclaimer states the terms; it is not a shield. <a href="#/terms">Read the terms</a>.</p>
+    <p class="explainer">Cabal is for promoting your own games. A disclaimer states the terms; it is not a shield. <a href="#/terms">Read the terms</a> · <a href="#/intro">What Cabal is</a>.</p>
   </footer>
   <script type="module" src="app.js"></script>
 </body>
