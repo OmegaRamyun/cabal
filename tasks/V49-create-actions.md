@@ -1,6 +1,6 @@
 # V49 — Obvious creation on both views
 
-Status: claimed
+Status: merged (main 1d7fcc3, v0.2.23; branch task/V49-create-actions commits 16bbe59 + 2550393)
 Branch: `task/V49-create-actions`
 Files owned: `src/home.mjs`, `src/discovery.mjs`, `src/user-formats.mjs` (new), `src/campaign-formats.mjs`, `tests/v49-create-actions.test.mjs`, `tasks/V49-create-actions.md`
 

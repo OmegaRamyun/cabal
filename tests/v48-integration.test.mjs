@@ -54,6 +54,10 @@ describe('V49 integration wiring (campaigns-new route)', () => {
     assert.deepEqual(parseHash('#/campaigns/new'), { view: 'campaigns-new' });
     assert.deepEqual(parseHash('#/campaigns'), { view: 'campaigns' });
     assert.deepEqual(parseHash('#/campaigns/'), { view: 'campaigns' });
+    // The usage re-mount guard keys off this distinction: campaigns-new
+    // must never be re-mounted as campaigns (it used to wipe a
+    // half-filled template form when the relay query resolved).
+    assert.notEqual(parseHash('#/campaigns/new').view, parseHash('#/campaigns').view);
   });
   test('navItemForView: campaigns-new highlights the Campaigns nav item', () => {
     assert.equal(navItemForView('campaigns-new'), 'discover');

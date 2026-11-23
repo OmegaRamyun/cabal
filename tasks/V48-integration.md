@@ -143,3 +143,18 @@ were re-dispatched after v0.2.22; results in the round report.
   is the link, shared in your own channels to get that first person.
   No fresh/unproven shelf, no badge softening. V50 brief + run
   script deleted; never re-propose.
+
+## V49 merged + first-run usability check (Nov 23, v0.2.23-0.2.24)
+
+- V49 merged `c8cbbf0` (branch commits `16bbe59` + `2550393`), integration
+  `1d7fcc3` (v0.2.23): `#/campaigns/new` route, merged formats everywhere,
+  create-action styles. **410/410 tests.**
+- First-run check (cold Playwright profile, `cabal-bench/firstrun-v49.log`):
+  **8/8 PASS** — Rings flow (game setup + Start a ring + create) 3.5s;
+  template flow (New campaign template + save + page opens) 3.0s; user
+  template appears in Campaigns. Both far under the 60s bar.
+- Real bug found BY that check and fixed in v0.2.24: the Campaigns usage
+  re-mount guarded on `hash.startsWith('#/campaigns')`, which also
+  matched `#/campaigns/new` — the relay query resolving (~6s in) wiped
+  a half-filled template form. Guard now uses `parseHash` for an exact
+  route match. Regression test in `tests/v48-integration.test.mjs`.

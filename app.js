@@ -446,8 +446,12 @@ async function renderCampaigns(view) {
   mountIt(usageCache);
   if (!usageCache) {
     loadFormatUsage(formatsList.map((f) => f.id)).then(() => {
-      const h = window.location.hash;
-      if (h.startsWith('#/campaigns') || h.startsWith('#/discover')) {
+      // Exact route match via parseHash: '#/campaigns/new' is a different
+      // view and must never be clobbered by this re-mount — the old
+      // startsWith('#/campaigns') guard wiped a half-filled template
+      // form the moment the relay query resolved.
+      const p = parseHash(window.location.hash);
+      if (p.view === 'campaigns' || p.view === 'discover') {
         mountIt(usageCache);
       }
     });
