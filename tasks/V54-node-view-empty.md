@@ -87,6 +87,17 @@ module imports and the updater's plain reload does NOT bypass
 pre-warm `app.js` + `src/*.mjs` with `fetch(url, {cache: 'reload'})`
 before reloading — coordinator's call.
 
+**Coordinator applied 2026-11-23 ~18:57 UTC (this commit):** full import map
+(all 30 entries: `./app.js` + every `./src/*.mjs`, all `?v=0.2.29`) +
+entry `app.js?v=0.2.29` + `version.json` bumped to 0.2.29. Each deploy is
+now atomic: a given index.html only ever loads its own version's modules,
+so a stale bundle can no longer mix with a fresh view. The `?v=` must be
+bumped with `version.json` on every future merge (coordinator duty).
+Residual known limit (not fixed here): a stale *index.html* itself can
+still replay the old bundle for up to 10 min after a deploy; the updater
+banner still detects the new version, but its Refresh is a plain reload.
+Follow-up, not this round.
+
 ## Acceptance
 
 - Root cause proven with evidence (which filter drops which ring, over the
