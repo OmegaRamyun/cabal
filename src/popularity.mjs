@@ -95,7 +95,16 @@ export function countFormatUsage(events) {
       const pubkey = cleanId(ev.pubkey);
       if (!pubkey) continue;
 
-      let formatId = "";
+      const ids = [];
+      const seen = new Set();
+      const push = (v) => {
+        const id = cleanId(v);
+        if (id && !seen.has(id)) {
+          seen.add(id);
+          ids.push(id);
+        }
+      };
+
       if (ev.content !== undefined && ev.content !== null) {
         if (typeof ev.content !== "string") continue;
         const trimmed = ev.content.trim();
@@ -107,19 +116,21 @@ export function countFormatUsage(events) {
             continue;
           }
           if (!isPlainObject(parsed)) continue;
-          if (typeof parsed.formatId === "string" && parsed.formatId.trim()) {
-            formatId = parsed.formatId.trim();
+          push(parsed.formatId);
+          if (Array.isArray(parsed.formatIds)) {
+            for (const fid of parsed.formatIds) push(fid);
           }
         }
       }
 
-      if (!formatId) {
-        const tagIds = extractTagFormatIds(ev.tags);
-        if (tagIds.length > 0) formatId = tagIds[0];
+      if (ids.length === 0) {
+        for (const fid of extractTagFormatIds(ev.tags)) push(fid);
       }
-      if (!formatId) continue;
+      if (ids.length === 0) continue;
 
-      ensure(formatId).rings.add(pubkey);
+      for (const formatId of ids) {
+        ensure(formatId).rings.add(pubkey);
+      }
     } else if (ev.kind === KIND_NOTE) {
       const tagIds = extractTagFormatIds(ev.tags);
       for (const formatId of tagIds) {

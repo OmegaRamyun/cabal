@@ -327,7 +327,8 @@ test("applyRelayEvents adopts a valid formatId and re-tags on republish; invalid
   assert.deepEqual(ce.tags.find((t) => t[0] === "t" && t[1].startsWith("cabal:format:")), ["t", "cabal:format:fmt_algoigno"]);
   const out = N.applyRelayEvents([], [ce]);
   assert.equal(out.applied, 1);
-  assert.equal(out.campaigns[0].formatId, "fmt_algoigno");
+  assert.deepEqual(out.campaigns[0].formatIds, ["fmt_algoigno"]);
+  assert.equal(out.campaigns[0].formatId, undefined);
   // Round-trip: republishing the synced ring keeps the format tag.
   const re = N.campaignEvent(out.campaigns[0], { createdAt: 2000 });
   assert.deepEqual(re.tags.find((t) => t[0] === "t" && t[1].startsWith("cabal:format:")), ["t", "cabal:format:fmt_algoigno"]);
@@ -335,5 +336,6 @@ test("applyRelayEvents adopts a valid formatId and re-tags on republish; invalid
   const bad = mkCampaign({ formatId: "bogus" });
   const badEv = await N.signEvent(N.campaignEvent(bad, { createdAt: 1000 }), bad.key);
   const out2 = N.applyRelayEvents([], [badEv]);
+  assert.deepEqual(out2.campaigns[0].formatIds, []);
   assert.equal(out2.campaigns[0].formatId, undefined);
 });

@@ -253,28 +253,50 @@ export async function verifyEvent(ev) {
 const stripLocal = (o) => { const { nostr, key, ...rest } = o ?? {}; return rest; };
 
 /**
- * V48: the format tag — a ring running a campaign format tags its events
- * so popularity counting (src/popularity.mjs) can find them. The tag is
- * the queryable handle; the format id also rides in the campaign JSON
- * content. Same id shape as FORMAT_ID_RE in src/campaign-formats.mjs
- * (kept local so nostr.mjs stays dependency-free).
+ * V48/V58: format tags — a ring running one or more campaign formats tags its
+ * events with one ["t", "cabal:format:<id>"] per running format so popularity
+ * counting (src/popularity.mjs) can find them. Same id shape as FORMAT_ID_RE
+ * in src/campaign-formats.mjs (kept local so nostr.mjs stays dependency-free).
  */
-export function formatTagFor(campaign) {
-  const id = campaign?.formatId;
-  return typeof id === "string" && /^fmt_[a-z0-9]{8}$/.test(id)
-    ? ["t", `cabal:format:${id}`]
-    : null;
+const FORMAT_ID_RE = /^fmt_[a-z0-9]{8}$/;
+
+function extractCampaignFormatIds(campaign) {
+  if (!campaign || typeof campaign !== "object" || Array.isArray(campaign)) return [];
+  const out = [];
+  const seen = new Set();
+  const push = (v) => {
+    if (typeof v !== "string") return;
+    const id = v.trim().toLowerCase();
+    if (!FORMAT_ID_RE.test(id) || seen.has(id)) return;
+    seen.add(id);
+    out.push(id);
+  };
+  push(campaign.formatId);
+  if (Array.isArray(campaign.formatIds)) {
+    for (const v of campaign.formatIds) push(v);
+  }
+  return out;
 }
 
-const withFormatTag = (tags, campaign) => {
-  const t = formatTagFor(campaign);
-  return t ? [...tags, t] : tags;
+/** One ["t", "cabal:format:<id>"] tag per running format (normalized, deduped). */
+export function formatTagsFor(campaign) {
+  return extractCampaignFormatIds(campaign).map((id) => ["t", `cabal:format:${id}`]);
+}
+
+/** Legacy alias: first format tag for a campaign, or null. */
+export function formatTagFor(campaign) {
+  return formatTagsFor(campaign)[0] ?? null;
+}
+
+const withFormatTags = (tags, campaign) => {
+  const fts = formatTagsFor(campaign);
+  return fts.length ? [...tags, ...fts] : tags;
 };
 
 /**
  * Campaign event: kind 30078, d = cabal:<id>. Content = campaign v2 JSON
- * (including `createdBy` and `removedMembers` when present) WITHOUT `key`
- * or `nostr`. Signed with the campaign key.
+ * (including `createdBy`, `removedMembers`, and `formatIds` when present)
+ * WITHOUT `key` or `nostr`. Signed with the campaign key.
  */
 export function campaignEvent(campaign, { createdAt } = {}) {
   const c = stripLocal(campaign);
@@ -285,7 +307,7 @@ export function campaignEvent(campaign, { createdAt } = {}) {
   return {
     kind: KIND_CAMPAIGN,
     created_at: createdAt ?? nowSec(),
-    tags: withFormatTag([["d", `cabal:${campaign.id}`], ["t", "cabal"]], campaign),
+    tags: withFormatTags([["d", `cabal:${campaign.id}`], ["t", "cabal"]], campaign),
     content: JSON.stringify(c),
   };
 }
@@ -301,6 +323,18 @@ export function removalEvent(campaign, { createdAt } = {}) {
   return campaignEvent(campaign, { createdAt: ts });
 }
 
+/**
+ * V58 adoption event: kind 30078 republish of the campaign with updated
+ * `formatIds` and one ["t", "cabal:format:<id>"] tag per running format,
+ * WITHOUT `key`, and guaranteed strictly newer `created_at` than the previous
+ * campaign event when `createdAt` is omitted. Uses the shared campaign keypair.
+ */
+export function adoptionEvent(campaign, { createdAt } = {}) {
+  const minCreatedAt = (campaign?.nostr?.createdAt ?? 0) + 1;
+  const ts = createdAt ?? Math.max(nowSec(), minCreatedAt);
+  return campaignEvent(campaign, { createdAt: ts });
+}
+
 /** Post event: kind 1, `a` -> campaign. Content = post JSON (no assists, no key). */
 export function postEvent(campaign, post, { campaignPubkey: pkOpt, createdAt } = {}) {
   const pk = pkOpt ?? campaignPubkey(campaign);
@@ -309,7 +343,7 @@ export function postEvent(campaign, post, { campaignPubkey: pkOpt, createdAt } =
   return {
     kind: KIND_NOTE,
     created_at: createdAt ?? nowSec(),
-    tags: withFormatTag([["a", campaignAddress(pk, campaign.id)], ["t", "cabal"], ["cabal-post", post.id]], campaign),
+    tags: withFormatTags([["a", campaignAddress(pk, campaign.id)], ["t", "cabal"], ["cabal-post", post.id]], campaign),
     content: JSON.stringify(rest),
   };
 }
@@ -326,8 +360,7 @@ export function encryptionEvent(campaign, post, assist, { campaignPubkey: pkOpt,
   const tags = [];
   if (evId) tags.push(["e", evId]);
   tags.push(["a", campaignAddress(pk, campaign.id)], ["t", "cabal"], ["cabal-post", post.id]);
-  const formatTag = formatTagFor(campaign);
-  if (formatTag) tags.push(formatTag);
+  for (const ft of formatTagsFor(campaign)) tags.push(ft);
   const { handle, note, url, quoteText, status, contributedAt } = stripLocal(assist);
   return {
     kind: KIND_NOTE, created_at: createdAt ?? nowSec(), tags,
@@ -477,10 +510,11 @@ export function applyRelayEvents(localCampaigns, events, opts = {}) {
       const localKey = c.key;
       // metadata replace (never `key`, never the posts array wholesale)
       for (const k of ["game", "title", "members", "window", "anchorPost", "demo"]) if (k in raw) c[k] = raw[k];
-      // V48 verifier fix: adopt the format id (validated) so a ring synced
-      // from a relay keeps its template link — without it the ring vanishes
-      // from "Rings running it" and its future posts lose the format tag.
-      if (typeof raw.formatId === "string" && /^fmt_[a-z0-9]{8}$/.test(raw.formatId)) c.formatId = raw.formatId;
+      // V48/V58: adopt validated format ids (mapping legacy raw.formatId ->
+      // first entry of formatIds and dropping the legacy key) so a ring synced
+      // from a relay keeps its template links and tags future events.
+      c.formatIds = extractCampaignFormatIds(raw);
+      delete c.formatId;
       if (typeof raw.createdBy === "string" && raw.createdBy.trim()) c.createdBy = str(raw.createdBy, 80).trim();
       if ("removedMembers" in raw) c.removedMembers = cleanRemovedMembers(raw.removedMembers);
       if (typeof raw.createdAt === "string" && !c.createdAt) c.createdAt = raw.createdAt;
@@ -762,6 +796,22 @@ export async function publishRemoval(client, campaign, opts = {}) {
   }
   const { key } = campaignKeypair(campaign);
   const ev = await signEvent(removalEvent(campaign, { createdAt: opts.createdAt }), key);
+  const relays = await client.publish(ev);
+  return { event: ev, id: ev.id, kind: ev.kind, relays };
+}
+
+/**
+ * V58: Publish a template adoption (or template list update) as a kind 30078
+ * campaign event republish signed with the shared campaign keypair.
+ * Strips `key` from content, guarantees a strictly newer `created_at`, and
+ * emits one ["t", "cabal:format:<id>"] tag per running format.
+ */
+export async function publishAdoption(client, campaign, opts = {}) {
+  if (!hasCampaignKey(campaign)) {
+    throw new Error("Read-only ring — invite link key is required to publish a template update.");
+  }
+  const { key } = campaignKeypair(campaign);
+  const ev = await signEvent(adoptionEvent(campaign, { createdAt: opts.createdAt }), key);
   const relays = await client.publish(ev);
   return { event: ev, id: ev.id, kind: ev.kind, relays };
 }

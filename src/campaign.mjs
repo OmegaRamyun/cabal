@@ -15,6 +15,8 @@
 // The old anchor-only shape (anchorPost + members with status) is still
 // accepted everywhere and migrated by normalizeCampaign.
 
+import { formatIdsForRing } from "./campaign-formats.mjs";
+
 export const PLATFORMS = Object.freeze(["x", "bluesky", "threads"]);
 // Display labels for ring posts (labels only, never integrations).
 export const POST_PLATFORMS = Object.freeze([
@@ -198,6 +200,9 @@ export function validateCampaign(c) {
       });
     }
   }
+  if (c.formatIds !== undefined && !Array.isArray(c.formatIds)) {
+    errors.push("formatIds: must be an array");
+  }
   return errors;
 }
 
@@ -247,6 +252,7 @@ export function normalizeCampaign(c) {
     if (!isObj(c)) return c;
     const next = clone(c);
     applyRemovalDefaults(next);
+    applyFormatDefaults(next);
     if (!Array.isArray(next.posts) || next.posts.length === 0) {
       if (isObj(next.anchorPost)) next.posts = [postFromAnchor(next)];
       else return next;
@@ -264,7 +270,7 @@ export function normalizeCampaign(c) {
       });
       return post;
     });
-    if (next.posts.length === 0) { const orig = clone(c); applyRemovalDefaults(orig); return orig; }
+    if (next.posts.length === 0) { const orig = clone(c); applyRemovalDefaults(orig); applyFormatDefaults(orig); return orig; }
     if (!isObj(next.anchorPost)) {
       const p0 = next.posts[0];
       next.anchorPost = {
@@ -318,6 +324,23 @@ function applyRemovalDefaults(next) {
 }
 
 /**
+ * Multi-template migration (V58): legacy `formatId` moves to the first entry
+ * of `formatIds`; rings without one get `formatIds: []`; legacy `formatId` key
+ * is dropped so `formatIds` is the sole canonical stored form.
+ */
+function applyFormatDefaults(next) {
+  const isCampaignShaped =
+    Array.isArray(next.members) ||
+    Array.isArray(next.posts) ||
+    isObj(next.anchorPost) ||
+    "formatId" in next ||
+    "formatIds" in next;
+  if (!isCampaignShaped) return;
+  next.formatIds = formatIdsForRing(next);
+  delete next.formatId;
+}
+
+/**
  * createCampaign({ game, title, anchorPost?, posts?, window, creator?, me?, members?, demo? })
  * Validates, assigns id + createdAt. The creator is members[0] (roster
  * only — no per-member status in v2). Supply `posts` (array of post input)
@@ -354,6 +377,8 @@ export function createCampaign(input = {}) {
     members,
     createdAt,
     ...(isNonEmptyString(input.key) ? { key: input.key } : {}),
+    ...(input.formatId !== undefined ? { formatId: input.formatId } : {}),
+    ...(input.formatIds !== undefined ? { formatIds: input.formatIds } : {}),
     ...(demo === true ? { demo: true } : {}),
   };
   const errors = [];
