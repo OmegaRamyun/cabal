@@ -396,28 +396,6 @@ async function loadFormatUsage(formatIds) {
 }
 
 /**
- * usageRingCounts(usage) — the seam between V46's usage shape
- * (Map id -> { rings: Set, assists: n }) and V45's (Map id ->
- * distinct-ring count, as toUsageMap consumes). Plain numbers pass
- * through; anything else counts 0. Pure, tested.
- */
-export function usageRingCounts(usage) {
-  const out = new Map();
-  const entries =
-    usage instanceof Map
-      ? [...usage.entries()]
-      : usage && typeof usage === 'object'
-        ? Object.entries(usage)
-        : [];
-  for (const [id, v] of entries) {
-    if (typeof id !== 'string' || !id) continue;
-    const n = v && v.rings instanceof Set ? v.rings.size : Number.isFinite(v) ? v : 0;
-    out.set(id, n);
-  }
-  return out;
-}
-
-/**
  * renderCampaigns(view) — the "Campaigns" view (V45/V46): the template
  * list on top (most-used first once the relay query resolves), the
  * ring-discovery sections below. #/discover is the legacy route to the
@@ -437,7 +415,7 @@ async function renderCampaigns(view) {
       campaigns: merged,
       formats: formatsList,
       rings: merged,
-      sortByUsage: usage ? usageRingCounts(usage) : null,
+      sortByUsage: usage || null,
       usageNote: usage ? usageNoteCache : null,
       navigate: (campaign) => {
         gamify.record('discover', { campaignId: campaign.id });
@@ -480,7 +458,7 @@ async function renderFormat(view, formatId) {
       formats: formatsList,
       formatId: format.id,
       rings,
-      usage: usage ? usageRingCounts(usage) : null,
+      usage: usage || null,
       usageNote: usage ? usageNoteCache : null,
       navigate: (c) => navigate('campaign', { campaignId: c.id }),
       startHref: `#/rings/${encodeURIComponent(format.id)}`,
@@ -489,7 +467,8 @@ async function renderFormat(view, formatId) {
   mountIt(usageCache);
   if (!usageCache) {
     loadFormatUsage(formatsList.map((f) => f.id)).then(() => {
-      if (window.location.hash.startsWith(`#/format/${encodeURIComponent(format.id)}`)) {
+      // Case-insensitive: the route matched the id case-insensitively.
+      if (window.location.hash.toLowerCase().startsWith(`#/format/${encodeURIComponent(format.id)}`)) {
         mountIt(usageCache);
       }
     });
@@ -539,7 +518,9 @@ function renderHomeExtras(view) {
   const slot = document.querySelector('#home-extras');
   if (!slot) return;
   slot.textContent = '';
-  if (view !== 'home') return;
+  // V48: #/rings IS the home dashboard under its own route, so it gets
+  // the primer link + field journal exactly like #/ does.
+  if (view !== 'home' && view !== 'rings') return;
   const explainer = document.createElement('p');
   explainer.className = 'explainer';
   const link = document.createElement('a');

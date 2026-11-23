@@ -1,8 +1,9 @@
 // V48 acceptance: Rings/Campaigns split integration (spec: split round).
 // - New routes parse: #/rings[/<formatId>], #/campaigns, #/format/<id>;
 //   #/discover stays an alias. Nav mapping follows.
-// - usageRingCounts: the V46 -> V45 seam (Map id -> {rings:Set} becomes
-//   Map id -> distinct-ring count).
+// - The usage seam: the V46 shape (Map id -> {rings:Set, assists:n})
+//   flows raw into formatsForDiscovery, which reads ring count primary
+//   and assists as tiebreak (toUsageDetail).
 // - Nostr event builders tag a formatId-carrying campaign with
 //   ["t", "cabal:format:<id>"] on campaign/post/Enscryption events, and
 //   omit the tag otherwise (V46 counting depends on the tag for kind 1).
@@ -12,8 +13,9 @@
 // manual check note in tasks/V48-integration.md, not a skipped test.
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseHash, navItemForView, usageRingCounts } from '../app.js';
+import { parseHash, navItemForView } from '../app.js';
 import { createCampaign, normalizeCampaign } from '../src/campaign.mjs';
+import { toUsageDetail, formatsForDiscovery, usageLabel } from '../src/campaign-formats.mjs';
 import {
   campaignEvent, postEvent, encryptionEvent, formatTagFor, generateCampaignKey,
 } from '../src/nostr.mjs';
@@ -47,28 +49,34 @@ describe('V48 new routes', () => {
   });
 });
 
-describe('V48 usageRingCounts (V46 -> V45 seam)', () => {
-  test('V46 Map shape (id -> {rings:Set, assists:n}) becomes id -> ring count', () => {
+describe('V48 usage seam (V46 shape into discovery)', () => {
+  const fmtA = { id: 'fmt_algoigno', tagline: 'A', description: '', howTo: '', examples: [], tags: [] };
+  const fmtB = { id: 'fmt_weekship', tagline: 'B', description: '', howTo: '', examples: [], tags: [] };
+  const fmtC = { id: 'fmt_oneclip1', tagline: 'C', description: '', howTo: '', examples: [], tags: [] };
+  test('toUsageDetail reads the V46 shape (rings Set -> count, assists kept)', () => {
     const usage = new Map([
-      [FMT, { rings: new Set(['pk1', 'pk2', 'pk1']), assists: 7 }],
+      ['fmt_algoigno', { rings: new Set(['pk1', 'pk2', 'pk1']), assists: 7 }],
       ['fmt_weekship', { rings: new Set(['pk3']), assists: 0 }],
     ]);
-    assert.deepEqual(
-      [...usageRingCounts(usage).entries()],
-      [[FMT, 2], ['fmt_weekship', 1]],
-    );
+    const detail = toUsageDetail(usage);
+    assert.deepEqual(detail.get('fmt_algoigno'), { count: 2, assists: 7 });
+    assert.deepEqual(detail.get('fmt_weekship'), { count: 1, assists: 0 });
+    assert.equal(toUsageDetail(null), null);
   });
-  test('plain numbers pass through; garbage counts 0; empty stays empty', () => {
-    assert.deepEqual(
-      [...usageRingCounts(new Map([[FMT, 3]])).entries()],
-      [[FMT, 3]],
-    );
-    assert.deepEqual(
-      [...usageRingCounts({ [FMT]: { rings: 'not-a-set' } }).entries()],
-      [[FMT, 0]],
-    );
-    assert.equal(usageRingCounts(null).size, 0);
-    assert.equal(usageRingCounts(undefined).size, 0);
+  test('formatsForDiscovery: ring count primary, assists tiebreak, then members, then id', () => {
+    const usage = new Map([
+      ['fmt_algoigno', { rings: new Set(['pk1']), assists: 1 }],
+      ['fmt_weekship', { rings: new Set(['pk2']), assists: 9 }],
+      ['fmt_oneclip1', { rings: new Set(['pk3', 'pk4']), assists: 0 }],
+    ]);
+    const order = formatsForDiscovery([fmtA, fmtB, fmtC], { usage, rings: [] }).map((f) => f.id);
+    // fmt_oneclip1 first (2 rings); fmt_weekship beats fmt_algoigno on assists (both 1 ring).
+    assert.deepEqual(order, ['fmt_oneclip1', 'fmt_weekship', 'fmt_algoigno']);
+  });
+  test('usageLabel works on the raw V46 Map (no converter needed)', () => {
+    const usage = new Map([['fmt_algoigno', { rings: new Set(['pk1', 'pk2']), assists: 3 }]]);
+    assert.equal(usageLabel('fmt_algoigno', usage), 'used by 2 rings');
+    assert.equal(usageLabel('fmt_weekship', usage), null);
   });
 });
 

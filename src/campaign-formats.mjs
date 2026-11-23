@@ -124,20 +124,52 @@ export function ringsRunningFormat(formatId, rings) {
 
 // Accepts a Map(id -> count), an array of [id, count] pairs, an array of
 // { id, count } objects, or a plain object. Counts must be finite >= 0.
-function toUsageMap(usage) {
+// V48: also accepts the V46 shape — values of { rings: Set, assists: n }
+// (or { count, assists }) — where the count is the distinct-ring count
+// and assists ride along for the tiebreak. Anything else is ignored.
+function toUsageDetail(usage) {
   if (usage === undefined || usage === null) return null;
   const out = new Map();
-  const put = (id, n) => {
-    if (typeof id === "string" && Number.isFinite(n) && n >= 0) out.set(lc(id), n);
+  const put = (id, count, assists = 0) => {
+    if (typeof id !== "string") return;
+    if (!Number.isFinite(count) || count < 0) return;
+    out.set(lc(id), {
+      count,
+      assists: Number.isFinite(assists) && assists >= 0 ? assists : 0,
+    });
   };
-  if (usage instanceof Map) for (const [id, n] of usage) put(id, n);
+  const readEntry = (id, v) => {
+    if (Number.isFinite(v)) return put(id, v, 0);
+    if (!isObj(v)) return;
+    const rings =
+      v.rings instanceof Set
+        ? v.rings.size
+        : Number.isFinite(v.rings)
+          ? v.rings
+          : Number.isFinite(v.count)
+            ? v.count
+            : null;
+    if (rings === null) return;
+    put(id, rings, Number.isFinite(v.assists) ? v.assists : 0);
+  };
+  if (usage instanceof Map) for (const [id, v] of usage) readEntry(id, v);
   else if (Array.isArray(usage)) {
     for (const e of usage) {
-      if (Array.isArray(e)) put(e[0], e[1]);
-      else if (isObj(e)) put(e.id, e.count);
+      if (Array.isArray(e)) readEntry(e[0], e[1]);
+      else if (isObj(e)) readEntry(e.id, e.count !== undefined ? { count: e.count, assists: e.assists } : e);
     }
-  } else if (isObj(usage)) for (const [id, n] of Object.entries(usage)) put(id, n);
+  } else if (isObj(usage)) for (const [id, v] of Object.entries(usage)) readEntry(id, v);
   else return null;
+  return out;
+}
+
+export { toUsageDetail };
+
+function toUsageMap(usage) {
+  const detail = toUsageDetail(usage);
+  if (!detail) return null;
+  const out = new Map();
+  for (const [id, d] of detail) out.set(id, d.count);
   return out;
 }
 
@@ -158,12 +190,14 @@ const ringMemberTotal = (formatId, rings) =>
 export function formatsForDiscovery(formats, { usage, rings } = {}) {
   const list = (Array.isArray(formats) ? formats : [])
     .filter((f) => isObj(f) && isNonEmptyString(f.id));
-  const u = toUsageMap(usage);
+  const u = toUsageDetail(usage);
   const members = new Map(list.map((f) => [f.id, ringMemberTotal(f.id, rings)]));
-  const used = (f) => (u ? (u.get(lc(f.id)) ?? 0) : 0);
+  const used = (f) => (u ? (u.get(lc(f.id))?.count ?? 0) : 0);
+  const assists = (f) => (u ? (u.get(lc(f.id))?.assists ?? 0) : 0);
   return [...list].sort(
     (a, b) =>
       used(b) - used(a) ||
+      assists(b) - assists(a) ||
       members.get(b.id) - members.get(a.id) ||
       String(a.id).localeCompare(String(b.id)),
   );
