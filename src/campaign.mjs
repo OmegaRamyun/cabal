@@ -635,19 +635,6 @@ export function postedCount(campaign) {
   return seen.size;
 }
 
-/**
- * pendingMembers — DEPRECATED SHIM. The spec deletes it (no per-member status
- * in v2) but src/home.mjs, which this task may not edit, still imports it;
- * removing the export would break that module's load. Returns roster members
- * with no assist anywhere in the ring. V39 removes the caller; delete then.
- */
-export function pendingMembers(campaign) {
-  const c = normalizeCampaign(campaign);
-  const done = new Set();
-  for (const p of c?.posts ?? []) for (const a of postAssists(p)) done.add(lc(a?.handle));
-  return (c?.members || []).filter((m) => !done.has(lc(m?.handle)));
-}
-
 function toTime(v) {
   if (v instanceof Date) return v.getTime();
   if (typeof v === "string" || typeof v === "number") return new Date(v).getTime();

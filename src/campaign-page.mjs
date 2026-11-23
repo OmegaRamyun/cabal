@@ -411,6 +411,8 @@ export function mount(rootEl, ctx) {
                 ? ` · ${esc(post.kind)}`
                 : '';
             const showPassOn = quotable && quotable.id === post.id;
+            const isOwnPost =
+              me.handle && handleKey(post.author) === handleKey(me.handle);
             return `<article class="post-card feed-post" data-post-id="${esc(post.id)}" data-platform="${esc(post.platform)}">
               <div class="post-head">
                 <span class="avatar avatar-h${avatarHue(post.author)}">${esc(initials(post.authorName || post.author))}</span>
@@ -421,7 +423,7 @@ export function mount(rootEl, ctx) {
               <p class="anchor-meta"><a href="${esc(post.url)}" target="_blank" rel="noopener noreferrer">View post</a></p>
               ${renderCommentsHtml(post)}
               ${renderPostActionHtml(post, alreadyMember, me)}
-              ${showPassOn ? `<p class="ring-pass-on">${esc(PASS_IT_ON_COPY)}</p>` : ''}
+              ${showPassOn ? `<p class="ring-pass-on">${esc(PASS_IT_ON_COPY)}</p>${isOwnPost ? '' : `<p><button type="button" data-pass-on-post="${esc(post.id)}">I passed it on</button></p>`}` : ''}
             </article>`;
           })
           .join('')
@@ -627,6 +629,19 @@ export function mount(rootEl, ctx) {
         });
         syncCampaignToStore(store, campaign, updated);
         render();
+      });
+    });
+
+    // "I passed it on" — self-reported receipt for the pass-it-on
+    // milestone. Only on the newest quotable ringmate post; the
+    // callback (app.js) records it privately, never a count.
+    rootEl.querySelectorAll('[data-pass-on-post]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (typeof ctx.onPassOn === 'function') {
+          ctx.onPassOn({ campaignId: campaign.id, postId: btn.dataset.passOnPost });
+        }
+        btn.disabled = true;
+        btn.textContent = 'Passed on — noted.';
       });
     });
 

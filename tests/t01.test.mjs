@@ -1,7 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseHash, makeStore } from '../app.js';
+import { parseHash, makeStore, firstPostIdsFor } from '../app.js';
 import { createMemoryStore } from '../src/store.mjs';
+
+test('firstPostIdsFor: founding-post composite keys, skips postless campaigns', () => {
+  assert.deepEqual(
+    firstPostIdsFor([
+      { id: 'cmp_a', posts: [{ id: 'pst_1' }, { id: 'pst_2' }] },
+      { id: 'cmp_b', posts: [] },
+      { id: 'cmp_c' },
+      { id: 'cmp_d', posts: [{ id: 'pst_9' }] },
+    ]),
+    ['cmp_a:pst_1', 'cmp_d:pst_9']
+  );
+  assert.deepEqual(firstPostIdsFor(), []);
+  assert.deepEqual(firstPostIdsFor(null), []);
+});
 
 test('parseHash: empty and root go home', () => {
   assert.deepEqual(parseHash(''), { view: 'home' });

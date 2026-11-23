@@ -11,7 +11,7 @@
 //   #c=<payload>          link intent — opens the app straight into a campaign
 
 import { createStore } from './src/store.mjs';
-import { decodeCampaignLink, markPosted } from './src/campaign.mjs';
+import { decodeCampaignLink, markContributed } from './src/campaign.mjs';
 import * as home from './src/home.mjs';
 import * as campaignPage from './src/campaign-page.mjs';
 import * as quoteComposer from './src/quote-composer.mjs';
@@ -61,6 +61,21 @@ export function makeStore(b) {
 }
 
 const store = makeStore(backend);
+
+/**
+ * firstPostIdsFor(campaigns) -> [`<campaignId>:<postId>`, ...] — the
+ * composite key of each ring's founding post. The journal needs these
+ * to tell a kindle on a later post (Second Wind) from one on the first
+ * post. Pure, tested.
+ */
+export function firstPostIdsFor(campaigns = []) {
+  const ids = [];
+  for (const c of campaigns || []) {
+    const first = c && Array.isArray(c.posts) ? c.posts[0] : null;
+    if (c && c.id && first && first.id) ids.push(`${c.id}:${first.id}`);
+  }
+  return ids;
+}
 
 /** parseHash(hash) -> { view, campaignId?, hash? } — pure, tested. */
 export function parseHash(hash = '') {
@@ -184,17 +199,31 @@ function renderCampaign(view, id) {
       return;
     }
     view.textContent = '';
-    campaignPage.mount(view, { store, navigate, campaign });
-    // Kindled hook for the inline composer (pending members): the composer
-    // mounts synchronously inside #campaign-composer, so the textarea is
-    // queryable right after mount. No V22 file touched.
-    const inlineTextarea = view.querySelector('#campaign-composer textarea');
-    if (inlineTextarea) {
-      gamify.trackRevision(inlineTextarea, {
-        anchorText: campaign.anchorPost?.text ?? '',
-        draftId: `composer:${campaign.id}`,
+    campaignPage.mount(view, {
+      store,
+      navigate,
+      campaign,
+      onPassOn: ({ campaignId, postId }) => {
+        gamify.record('passon', { campaignId, postId });
+      },
+    });
+    // Kindled hooks for the inline composers: one textarea per
+    // unassisted X/Bluesky post slot. Each watches its own post's text
+    // with a per-post draft id, so a kindle lands on the right post.
+    // (The old single `#campaign-composer textarea` hook is gone — the
+    // feed renders one composer slot per post now.)
+    const firstPostIds = firstPostIdsFor(store.campaigns);
+    view.querySelectorAll('[data-composer-post]').forEach((slot) => {
+      const postId = slot.dataset.composerPost;
+      const post = (campaign.posts || []).find((p) => p.id === postId);
+      const textarea = slot.querySelector('textarea');
+      if (!textarea || !post) return;
+      gamify.trackRevision(textarea, {
+        anchorText: post.text ?? '',
+        draftId: `${campaign.id}:${post.id}`,
+        firstPostIds,
       });
-    }
+    });
   });
 }
 
@@ -205,17 +234,20 @@ function renderComposer(view, id) {
       return;
     }
     view.textContent = '';
+    // Standalone composer route targets the founding post (the
+    // composer's own default when no ctx.post is given).
+    const target =
+      (campaign.posts && campaign.posts[0]) || campaign.anchorPost || null;
     const handle = quoteComposer.mount(view, {
       campaign,
       me: store.me,
       onPosted: (quoteUrl, draft) => {
         const me = store.me;
-        if (me && me.handle) {
-          const updated = markPosted(campaign, me.handle, quoteUrl || undefined);
-          const member = (updated.members || []).find(
-            (mm) => String(mm.handle).trim().toLowerCase() === String(me.handle).trim().toLowerCase(),
-          );
-          if (member && String(draft || '').trim()) member.quoteText = String(draft).trim();
+        if (me && me.handle && target && target.id) {
+          const updated = markContributed(campaign, target.id, me.handle, {
+            url: quoteUrl || undefined,
+            quoteText: String(draft || '').trim() || undefined,
+          });
           const list = store.campaigns;
           const idx = list.findIndex((c) => c.id === campaign.id);
           if (idx >= 0) list[idx] = updated;
@@ -226,21 +258,25 @@ function renderComposer(view, id) {
       },
     });
     // Kindled: watch this draft for a flagged-then-genuinely-reworked revision.
-    if (handle && handle.textarea) {
+    if (handle && handle.textarea && target) {
       gamify.trackRevision(handle.textarea, {
-        anchorText: campaign.anchorPost?.text ?? '',
-        draftId: `composer:${campaign.id}`,
+        anchorText: target.text ?? '',
+        draftId: `${campaign.id}:${target.id}`,
+        firstPostIds: firstPostIdsFor(store.campaigns),
       });
     }
-    // Rest Point: the per-campaign pre-post checklist, persisted under
-    // cabal.v2.checklist.<id>. The Voice Card rides along as a local
-    // reference while writing. Ready -> record("rest").
+    // Rest Point: the per-post pre-post checklist, persisted under
+    // cabal.v2.checklist.<id>.<postId>. The Voice Card rides along as a
+    // local reference while writing. Ready -> record("rest").
     const checkSlot = document.createElement('section');
     view.appendChild(checkSlot);
     checklist.mount(checkSlot, {
       campaignId: id,
-      onReadyChange: (ready) => {
-        if (ready) gamify.record('rest', { campaignId: id });
+      postId: target ? target.id : undefined,
+      onReadyChange: (ready, info) => {
+        if (ready) {
+          gamify.record('rest', { campaignId: id, postId: info.postId });
+        }
       },
     });
   });
@@ -291,7 +327,10 @@ function renderHomeExtras(view) {
   slot.appendChild(explainer);
   const journalSlot = document.createElement('div');
   slot.appendChild(journalSlot);
-  gamify.mount(journalSlot, { pageIds: intro.introPageIds() });
+  gamify.mount(journalSlot, {
+    pageIds: intro.introPageIds(),
+    firstPostIds: firstPostIdsFor(store.campaigns),
+  });
 }
 
 function renderTools(view) {
