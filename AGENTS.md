@@ -1,7 +1,8 @@
 # AGENTS.md
 
-Cabal Ring Kit — Stage 1 MVP. Static webapp, zero backend. Read this before
-writing code. Keep it short: commands first, rules second.
+Cabal Ring Kit — v0.2 campaign-first. Static webapp, zero backend. Read
+this before writing code. Keep it short: commands first, rules second.
+Design contract: REDESIGN-BRIEF.md. v0.2 queue: tasks/INDEX.md (V20–V26).
 
 ## Commands
 
@@ -13,16 +14,20 @@ writing code. Keep it short: commands first, rules second.
 ## Stack
 
 Vanilla ES modules, no bundler. Each feature is one `src/<name>.mjs` that
-exports pure functions and a `mount(rootEl)` for its UI. `index.html`
-loads the modules; `app.js` holds the module registry
-(`window.Cabal.modules.<name>`). No module touches another module's DOM.
-No AI in the app: the similarity gate is SimHash + word 3-grams, computed
-locally in the browser, no model, no download, no network.
+exports pure functions and a `mount(rootEl, ctx)` for its UI. `index.html`
+is the shell; `app.js` is the hash router (home, campaign, composer,
+discover, tools, terms) plus the link intent (`#c=` decodes a campaign
+from the URL) and first-load demo seeding. Views read and write through
+V21's `src/store.mjs` (`cabal.v2.*` localStorage keys). No module touches
+another module's DOM. No AI in the app: the similarity gate is SimHash +
+word 3-grams, computed locally in the browser, no model, no download, no
+network. Demo data is fictional and flagged `demo: true` with a DEMO
+badge everywhere it appears; `src/demo.mjs` seeds it on first load only.
 
 ## File ownership
 
-One task = one file set (see `tasks/INDEX.md`). Only T01 touches
-`index.html`, `style.css`, `app.js`. Only the coordinator touches
+One task = one file set (see `tasks/INDEX.md`). Only the coordinator
+touches `index.html`, `style.css`, `app.js`. Only the coordinator touches
 `tasks/INDEX.md`. Never edit another task's files — if you need a shared
 change, say so in your report and stop.
 

@@ -174,16 +174,18 @@ test('createCampaign: frozen shape, id + createdAt, creator pending', () => {
   assert.equal(c.window.start, '2026-11-23');
 });
 
-test('createCampaign: no me means no members yet', () => {
-  const c = createCampaign({
-    game,
-    title: 'Push',
-    anchorPost: { platform: 'x', url: 'https://x.com/d/1', text: 'Hi', author: '@dev' },
-    window: null,
-    me: null,
-  });
-  assert.deepEqual(c.members, []);
-  assert.equal(c.window, null);
+test('createCampaign: no creator means invalid — V21 throws', () => {
+  assert.throws(
+    () =>
+      createCampaign({
+        game,
+        title: 'Push',
+        anchorPost: { platform: 'x', url: 'https://x.com/d/1', text: 'Hi', author: '@dev' },
+        window: null,
+        me: null,
+      }),
+    /members: at least one member is required/,
+  );
 });
 
 test('addMember: appends pending, dedupes by handle, no mutation', () => {
@@ -192,5 +194,8 @@ test('addMember: appends pending, dedupes by handle, no mutation', () => {
   assert.equal(joined.members.length, 3);
   assert.equal(joined.members[2].status, 'pending');
   assert.equal(c.members.length, 2); // original untouched
-  assert.equal(addMember(joined, { name: 'Pal again', handle: '@pal' }), joined);
+  // Dedupe returns a new object with the same content (V21: no mutation,
+  // never the same reference).
+  assert.deepEqual(addMember(joined, { name: 'Pal again', handle: '@pal' }), joined);
+  assert.notEqual(addMember(joined, { name: 'Pal again', handle: '@pal' }), joined);
 });

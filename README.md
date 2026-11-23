@@ -8,22 +8,29 @@ other's games. Same campaign, different post: every member writes their own
 words, quote-posts with genuine commentary, staggers timing, and discloses
 the relationship. No quotas, no ledgers, no automation, no copypasta.
 
-Stage 1 MVP is a **basic static webapp**: no server, no OAuth, no API keys,
-no build step. Posting happens through the platforms' own composers (Web
-Intents) and by hand where no intent exists.
+v0.2 is a **campaign-first static webapp**: no server, no OAuth, no API
+keys, no build step, no accounts. Posting happens through the platforms'
+own composers (Web Intents) and by hand where no intent exists. The
+design contract is `REDESIGN-BRIEF.md`.
 
-## What Stage 1 does
+## What v0.2 does
 
-- Intent composers for X, Bluesky, Threads, and Reddit, with per-platform
-  length checks
-- A browser-local similarity gate (lexical always on, embeddings opt-in)
-  that refuses near-duplicates
-- An opt-in matchmaking directory (genre / Steam-tag / audience-bucket /
-  launch-window) with an explainable match score and rotation caps
-- A Discord #rings bridge (per-guild webhooks, announcement following)
-- A Kickstarter planner (R = F x C x P) and referral-tag builder
-- A Steam UTM builder and campaign templates with disclosure lines
-- A pre-post checklist
+- Your game at the center: first open asks one question, then the app is
+  that game's dashboard — live campaign, your turn, your rings.
+- Campaigns: one game, one post to amplify, a window, and the whole ring
+  with who's posted. A campaign is a link; the link is the invite.
+- Quote composer fed by the campaign: drafts with the original attached,
+  and a browser-local similarity gate (SimHash + word 3-grams) that warns
+  like a password meter — it never blocks a post.
+- Discovery: campaigns with similar games (tag match) and popular
+  campaigns (member count), over a public static list
+  (`data/campaigns.json`). A campaign lists only with a real game page
+  attached and at least one joiner — the ring is the proof.
+- Demo mode: fictional example data on first load (clearly labeled DEMO),
+  clearable any time from the banner.
+- Campaign tools (demoted off the front page): Kickstarter planner,
+  Steam UTM builder, Discord #rings bridge, pre-post checklist.
+- Terms and disclaimer, in plain language, in the app.
 
 ## Run it
 
@@ -41,16 +48,15 @@ npm test
 
 ## Usage
 
-Serve the folder and open `http://localhost:8000` in your browser — no account, no backend, and no API keys required.
+Serve the folder and open `http://localhost:8000` in your browser — no account, no backend, and no API keys required. On first load you get fictional demo data (Starlight Salvage, three demo campaigns) so the loop is visible immediately. Clear it from the DEMO banner any time.
 
-1. **Voice Card:** Add 3–5 of your own best posts (links or text) as a human writing reference in the composer. These stay in `localStorage` only — never used as training data and never sent anywhere.
-2. **Intent Composer & Disclosure Templates:** Pick a target platform (X, Bluesky, Threads, or Reddit), write in your own words with per-platform length checks, and include a disclosure line whenever a relationship exists.
-3. **Local Similarity Gate:** Run the browser-local similarity check before posting (lexical matching is always on; embeddings are opt-in and never loaded on first visit). If a draft is flagged as a near-duplicate, rewrite it.
-4. **Matchmaking Directory & Discord `#rings`:** Optionally browse or join the matchmaking directory (genre, Steam tags, audience bucket, launch window) and store per-guild Discord `#rings` webhook URLs in `localStorage`.
-5. **Steam UTM / Kickstarter Planner:** Generate Steam UTM links, referral tags, and campaign projections (`R = F x C x P`).
-6. **Pre-post Checklist:** Review all 6 checks — own words, similarity gate passed, disclosure line present, UTM/referral link where applicable, your audience's timing (not a synchronised burst), and one shared game today — then tap **Post** in the platform's own composer.
+1. **Your game:** Tell Cabal your game (name, Steam/itch links, tags). That is your dashboard.
+2. **Start a campaign:** One post to amplify, a window, and the ring. Share the campaign link — anyone with it opens the app straight into the campaign and can join.
+3. **Your turn:** Open a campaign where you owe a quote-post. Write it in your own words with the original attached; the similarity gate warns if it reads too close to the original, and never stops you.
+4. **Post it yourself:** Open the draft in X or Bluesky and tap Post in the platform's own composer. Then tap "I posted it" so the ring sees you posted.
+5. **Discover:** Find campaigns with similar games or popular campaigns, and join rings that need your voice.
 
-All user data (voice card entries, webhook URLs, drafts, and checklist state) stays in your browser's `localStorage` and can be cleared at any time through your browser's site data settings.
+All user data (game, campaigns, drafts, checklist state) stays in your browser's `localStorage` and can be cleared at any time through your browser's site data settings.
 
 ## Contribute
 

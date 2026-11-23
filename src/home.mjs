@@ -4,11 +4,9 @@
 // that game's dashboard: live campaign, your turn, your rings, start a
 // campaign.
 //
-// NOTE (integration): the pure helpers postedCount / pendingMembers /
-// isLive / addMember / createCampaign duplicate V21's src/campaign.mjs
-// (built in parallel on another branch — do not import it). Dedupe at
-// integration: keep V21's versions, delete these. The localStorage fallback
-// in resolveStore is likewise temporary: V21's src/store.mjs replaces it.
+// Campaign helpers (postedCount, createCampaign, ...) live in V21's
+// src/campaign.mjs and are re-exported here. The localStorage fallback in
+// resolveStore is a safety net; the shell passes V21's store.
 //
 // Mount contract: mount(rootEl, ctx) where
 //   ctx = { store, navigate(view, params), campaign? }
@@ -48,62 +46,18 @@ export function validateGameSetup(game) {
   return errors;
 }
 
-// --- duplicated from V21 (src/campaign.mjs) — see note above ---
+// Campaign helpers live in V21's src/campaign.mjs — imported here and
+// re-exported so campaign-page.mjs and the tests keep working.
+import {
+  postedCount,
+  pendingMembers,
+  isLive,
+  isUpcoming,
+  addMember,
+  createCampaign,
+} from './campaign.mjs';
 
-export function postedCount(campaign) {
-  return (campaign.members || []).filter((m) => m.status === 'posted').length;
-}
-
-export function pendingMembers(campaign) {
-  return (campaign.members || []).filter((m) => m.status !== 'posted');
-}
-
-export function isLive(campaign, now = new Date()) {
-  const w = campaign.window;
-  if (!w) return true;
-  const t = now instanceof Date ? now.getTime() : new Date(now).getTime();
-  if (w.start && t < new Date(w.start).getTime()) return false;
-  if (w.end && t > new Date(w.end).getTime()) return false;
-  return true;
-}
-
-export function isUpcoming(campaign, now = new Date()) {
-  const w = campaign.window;
-  if (!w || !w.start) return false;
-  const t = now instanceof Date ? now.getTime() : new Date(now).getTime();
-  return t < new Date(w.start).getTime();
-}
-
-/** Add a member (no mutation, no-op if the handle is already in the ring). */
-export function addMember(campaign, { name, handle }) {
-  const members = campaign.members || [];
-  if (members.some((m) => m.handle === handle)) return campaign;
-  return {
-    ...campaign,
-    members: [...members, { name, handle, status: 'pending' }],
-  };
-}
-
-/** Create a campaign in the frozen shape; creator is members[0], pending. */
-export function createCampaign({ game, title, anchorPost, window: win, me }) {
-  const creator =
-    me && me.handle ? { name: me.name || me.handle, handle: me.handle } : null;
-  return {
-    id: 'cmp_' + Math.random().toString(36).slice(2, 10),
-    game: {
-      name: game.name,
-      links: { ...(game.links || {}) },
-      tags: [...(game.tags || [])],
-    },
-    title,
-    anchorPost: { ...anchorPost },
-    window: win || null,
-    members: creator ? [{ ...creator, status: 'pending' }] : [],
-    createdAt: new Date().toISOString(),
-  };
-}
-
-// --- end V21 duplication ---
+export { postedCount, pendingMembers, isLive, isUpcoming, addMember, createCampaign };
 
 /** { posted, total, pending } for a campaign's ring. */
 export function ringSummary(campaign) {
@@ -292,6 +246,14 @@ export function mount(rootEl, ctx) {
       }
       store.saveGame(game);
       store.game = game;
+      // Remember who I am from the X handle, so campaign creation has a
+      // creator even before I ever join a ring.
+      if (links.x && typeof store.saveMe === 'function') {
+        const handle = '@' + links.x.replace(/\/$/, '').split('/').pop();
+        const me = { name: game.name, handle };
+        store.saveMe(me);
+        store.me = me;
+      }
       render();
     });
   }
@@ -406,13 +368,34 @@ export function mount(rootEl, ctx) {
       }
       const start = String(data.get('start') || '').trim();
       const end = String(data.get('end') || '').trim();
-      const campaign = createCampaign({
-        game: store.game,
-        title,
-        anchorPost,
-        window: start || end ? { start: start || null, end: end || null } : null,
-        me: store.me,
-      });
+      // V21's createCampaign validates: both window dates or neither, and
+      // a creator is required. Fall back to the game itself as creator.
+      const creator =
+        store.me && store.me.handle
+          ? store.me
+          : {
+              name: store.game.name,
+              handle:
+                '@' +
+                store.game.name
+                  .toLowerCase()
+                  .replace(/[^a-z0-9]+/g, '')
+                  .slice(0, 20),
+            };
+      let campaign;
+      try {
+        campaign = createCampaign({
+          game: store.game,
+          title,
+          anchorPost,
+          window: start && end ? { start, end } : null,
+          creator,
+        });
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.hidden = false;
+        return;
+      }
       const campaigns = [...(store.campaigns || []), campaign];
       store.saveCampaigns(campaigns);
       store.campaigns = campaigns;

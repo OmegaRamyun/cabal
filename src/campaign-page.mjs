@@ -2,17 +2,17 @@
 //
 // Shows the game, the anchor post, and the WHOLE ring — every member with
 // posted/pending state and a quote-post link when posted. Join is local
-// only: no server, no approval queue.
+// only: no server, no approval queue. The share link encodes the campaign
+// in the URL hash, so anyone with the link opens the app straight into
+// this campaign.
 //
 // Mount contract: mount(rootEl, ctx) where
 //   ctx = { store, navigate(view, params), campaign }
 //   store = { game, campaigns, me, saveGame, saveCampaigns, saveMe }
 //   campaign = the campaign object to render (frozen V21 shape)
-// Pure helpers (postedCount, ringSummary, addMember) live in ./home.mjs
-// and are re-exported here; at integration they move to V21's
-// src/campaign.mjs — this module should then import from there instead.
 
-import { addMember, postedCount, ringSummary, resolveStore } from './home.mjs';
+import { addMember, postedCount, encodeCampaignLink } from './campaign.mjs';
+import { ringSummary, resolveStore } from './home.mjs';
 
 export { addMember, postedCount, ringSummary };
 
@@ -56,6 +56,9 @@ export function mount(rootEl, ctx) {
     const alreadyMember = (campaign.members || []).some(
       (m) => me.handle && m.handle === me.handle,
     );
+    const baseUrl =
+      typeof window !== 'undefined' ? window.location.href.split('#')[0] : '';
+    const share = encodeCampaignLink(campaign, baseUrl);
 
     const links = game.links || {};
     const gameLinks = [
@@ -80,6 +83,12 @@ export function mount(rootEl, ctx) {
             <a href="${esc(campaign.anchorPost.url)}">View original post</a></p>
           <p class="campaign-meta">${esc(windowLabel(campaign))} · Posted ${summary.posted}/${summary.total}</p>
         </article>
+        <section class="campaign-share">
+          <h3>Share this campaign</h3>
+          <p>Anyone with this link opens the app straight into this campaign and can join. The link is the invite.</p>
+          <p><input type="text" readonly value="${esc(share.url)}" id="campaign-share-link" aria-label="Campaign link"> <button type="button" id="campaign-share-copy">Copy link</button></p>
+          ${share.long ? '<p class="form-error">This link is long — some chat apps may trim it.</p>' : ''}
+        </section>
         <section class="ring">
           <h3>The whole ring (${summary.total})</h3>
           ${
@@ -148,6 +157,25 @@ export function mount(rootEl, ctx) {
     }
     const back = rootEl.querySelector('#back-home');
     if (back) back.addEventListener('click', () => navigate('home', {}));
+    const copyBtn = rootEl.querySelector('#campaign-share-copy');
+    const shareInput = rootEl.querySelector('#campaign-share-link');
+    if (copyBtn && shareInput) {
+      copyBtn.addEventListener('click', async () => {
+        const text = shareInput.value;
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+          } else {
+            shareInput.select();
+            document.execCommand('copy');
+          }
+          copyBtn.textContent = 'Copied!';
+        } catch {
+          shareInput.select();
+          copyBtn.textContent = 'Select and copy';
+        }
+      });
+    }
   }
 
   render();

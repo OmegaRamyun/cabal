@@ -3,6 +3,13 @@
 // REDESIGN-BRIEF.md section 4: a campaign shows in discovery only when
 // its game attaches a real game page (Steam or itch, valid http(s) URL)
 // AND at least 2 members (creator + one joiner). The ring is the proof.
+// Tag similarity reuses src/match.mjs's jaccard; postedCount comes from
+// src/campaign.mjs (both re-exported where tests need them).
+
+import { jaccard } from './match.mjs';
+import { postedCount } from './campaign.mjs';
+
+export { postedCount };
 
 function isHttpUrl(s) {
   if (typeof s !== "string" || !/^https?:\/\//i.test(s.trim())) return false;
@@ -23,16 +30,6 @@ export function isListable(campaign) {
   return hasGamePage && members.length >= 2;
 }
 
-// NOTE (integration): this is the Jaccard formula from src/match.mjs
-// duplicated here on purpose — do not import match.mjs into discovery;
-// a future integration pass may unify the two copies.
-function jaccard(setA, setB) {
-  if (setA.size === 0 && setB.size === 0) return 0;
-  let inter = 0;
-  for (const x of setA) if (setB.has(x)) inter++;
-  return inter / (setA.size + setB.size - inter);
-}
-
 const tagSet = (tags) =>
   new Set((Array.isArray(tags) ? tags : []).map((t) => String(t).trim().toLowerCase()).filter(Boolean));
 
@@ -41,11 +38,6 @@ export function tagSimilarity(aTags, bTags) {
 }
 
 const memberCount = (c) => (Array.isArray(c.members) ? c.members.length : 0);
-
-export function postedCount(campaign) {
-  if (!Array.isArray(campaign?.members)) return 0;
-  return campaign.members.filter((m) => m.status === "posted").length;
-}
 
 export function similarCampaigns(myTags, campaigns) {
   const mine = tagSet(myTags);
