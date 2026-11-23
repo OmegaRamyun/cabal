@@ -16,7 +16,7 @@ merges. Never edit another task's files.
 | T07 | Kickstarter planner + referral tags | `src/kickstarter.mjs`, `tests/t07.test.mjs` | done | — | Sonnet |
 | T08 | Steam UTM builder + campaign templates | `src/steam.mjs`, `src/templates.mjs`, `tests/t08.test.mjs` | done | — | Hydrogen |
 | T09 | Pre-post checklist + docs | `src/checklist.mjs`, `CONTRIBUTING.md`, `tests/t09.test.mjs` | done | — | Hydrogen |
-| T10 | Test harness + CI | `package.json`, `tests/`, `.github/workflows/test.yml` | partial | — | Sonnet |
+| T10 | Test harness + CI | `package.json`, `tests/`, `.github/workflows/test.yml` | done | — | Sonnet |
 
 Lane suggestions are a starting split, not a lock — the coordinator
 assigns by quota and load. T10 goes last or alongside; it owns the
