@@ -38,6 +38,7 @@ harness, other tasks own their test files.
 | V28 | Social feel: feed, avatars, relative time, composer-first | `src/campaign.mjs`, `src/demo.mjs`, `src/quote-composer.mjs`, `src/campaign-page.mjs`, `src/home.mjs`, `src/discovery.mjs`, `style.css`, `tasks/V28-social-feel.md`, `tests/v28-social.test.mjs` | done | `task/V28-social-feel` |
 | V29 | Auto-updater: version.json polling + banner, never force-reload | `version.json`, `src/updater.mjs`, `tests/v29-updater.test.mjs`, `tasks/V29-auto-updater.md`, `index.html`, `style.css`, `app.js` | done | `task/V29-auto-updater` |
 | V30 | Navbar: icon top bar, Tools & Terms gear menu | `index.html`, `style.css`, `app.js`, `tests/v30-navbar.test.mjs`, `tasks/V30-navbar.md`, `version.json` | done | `task/V30-navbar` |
+| V31 | Atom discovery feed (`campaigns.atom`) | `src/atom.mjs`, `scripts/generate-atom.mjs`, `campaigns.atom`, `tests/v31-atom.test.mjs`, `index.html`, `version.json` | done | `task/V31-atom` |
 
 Coordinator owns the shell (`index.html`, `style.css`, `app.js`), the merge,
 and the end-to-end Playwright check. Tracks build modules + tests only and
