@@ -22,3 +22,18 @@ merges. Never edit another task's files.
 Lane suggestions are a starting split, not a lock — the coordinator
 assigns by quota and load. T10 goes last or alongside; it owns the
 harness, other tasks own their test files.
+
+## v0.2 — campaign-first redesign (brief: REDESIGN-BRIEF.md, commit 1e489af)
+
+| Task | Scope | Files owned | Status | Branch |
+|---|---|---|---|---|
+| V21 | Campaign object + link intent + store | `src/campaign.mjs`, `src/store.mjs`, `tests/v21-campaign.test.mjs` | open | `task/V21-campaign-core` |
+| V22 | Home dashboard + campaign page | `src/home.mjs`, `src/campaign-page.mjs`, `tests/v22-home.test.mjs` | open | `task/V22-home-page` |
+| V23 | Composer fed by the campaign | `src/quote-composer.mjs`, `tests/v23-quote-composer.test.mjs` | open | `task/V23-quote-composer` |
+| V24 | Discovery: similar + popular, static list | `src/discovery.mjs`, `data/campaigns.json`, `tests/v24-discovery.test.mjs` | open | `task/V24-discovery` |
+| V25 | Demo mode + disclaimers/terms | `src/demo.mjs`, `src/terms.mjs`, `tests/v25-demo.test.mjs` | open | `task/V25-demo-terms` |
+| V26 | Migration: Stage 1 modules re-homed | `src/checklist.mjs`, `src/discord.mjs`, `tests/v26-migration.test.mjs` | open | `task/V26-migration` |
+
+Coordinator owns the shell (`index.html`, `style.css`, `app.js`), the merge,
+and the end-to-end Playwright check. Tracks build modules + tests only and
+never touch the shell or each other's files.
