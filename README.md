@@ -39,6 +39,19 @@ Tests:
 npm test
 ```
 
+## Usage
+
+Serve the folder and open `http://localhost:8000` in your browser — no account, no backend, and no API keys required.
+
+1. **Voice Card:** Add 3–5 of your own best posts (links or text) as a human writing reference in the composer. These stay in `localStorage` only — never used as training data and never sent anywhere.
+2. **Intent Composer & Disclosure Templates:** Pick a target platform (X, Bluesky, Threads, or Reddit), write in your own words with per-platform length checks, and include a disclosure line whenever a relationship exists.
+3. **Local Similarity Gate:** Run the browser-local similarity check before posting (lexical matching is always on; embeddings are opt-in and never loaded on first visit). If a draft is flagged as a near-duplicate, rewrite it.
+4. **Matchmaking Directory & Discord `#rings`:** Optionally browse or join the matchmaking directory (genre, Steam tags, audience bucket, launch window) and store per-guild Discord `#rings` webhook URLs in `localStorage`.
+5. **Steam UTM / Kickstarter Planner:** Generate Steam UTM links, referral tags, and campaign projections (`R = F x C x P`).
+6. **Pre-post Checklist:** Review all 6 checks — own words, similarity gate passed, disclosure line present, UTM/referral link where applicable, your audience's timing (not a synchronised burst), and one shared game today — then tap **Post** in the platform's own composer.
+
+All user data (voice card entries, webhook URLs, drafts, and checklist state) stays in your browser's `localStorage` and can be cleared at any time through your browser's site data settings.
+
 ## Contribute
 
 Pick an open task in `tasks/INDEX.md`. One task = one file set + one
