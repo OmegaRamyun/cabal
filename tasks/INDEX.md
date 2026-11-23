@@ -35,6 +35,7 @@ harness, other tasks own their test files.
 | V26 | Migration: Stage 1 modules re-homed | `src/checklist.mjs`, `src/discord.mjs`, `tests/v26-migration.test.mjs` | done | `task/V26-migration` |
 | V20 | Shell integration: router, demo seeding, link intent, dedupe | `index.html`, `style.css`, `app.js`, `tests/t01.test.mjs` | done | `task/V20-integration` |
 | V27 | UI polish: Pico.css vendored, tokens, motion | `vendor/pico.min.css`, `vendor/README.md`, `style.css`, `index.html`, `src/home.mjs`, `src/campaign-page.mjs`, `src/discovery.mjs`, `tasks/V27-polish.md` | done | `task/V27-ui-polish` |
+| V28 | Social feel: feed, avatars, relative time, composer-first | `src/campaign.mjs`, `src/demo.mjs`, `src/quote-composer.mjs`, `src/campaign-page.mjs`, `src/home.mjs`, `src/discovery.mjs`, `style.css`, `tasks/V28-social-feel.md`, `tests/v28-social.test.mjs` | done | `task/V28-social-feel` |
 
 Coordinator owns the shell (`index.html`, `style.css`, `app.js`), the merge,
 and the end-to-end Playwright check. Tracks build modules + tests only and

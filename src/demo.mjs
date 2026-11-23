@@ -62,10 +62,15 @@ export function demoGame() {
   };
 }
 
-function member(name, handle, status, quoteUrl) {
+function member(name, handle, status, quoteUrl, extra) {
   const m = { name, handle, status };
   if (quoteUrl) m.quoteUrl = quoteUrl;
+  if (extra && typeof extra === "object") Object.assign(m, extra);
   return m;
+}
+
+function hoursAgo(base, hours) {
+  return new Date(base.getTime() - hours * 3600 * 1000).toISOString();
 }
 
 function campaign(id, title, anchorPost, window, members, createdAt) {
@@ -104,8 +109,14 @@ export function demoCampaigns(now = new Date()) {
       },
       { start: isoAt(base, -3), end: isoAt(base, 4) },
       [
-        member("Moss", "@mossplays", "posted", "https://x.com/mossplays/status/1000000000000000002"),
-        member("Pip", "@pipdraws", "posted", "https://x.com/pipdraws/status/1000000000000000003"),
+        member("Moss", "@mossplays", "posted", "https://x.com/mossplays/status/1000000000000000002", {
+          postedAt: hoursAgo(base, 2),
+          quoteText: "The salvage runs in this one are so cozy I forgot I was supposed to be working.",
+        }),
+        member("Pip", "@pipdraws", "posted", "https://x.com/pipdraws/status/1000000000000000003", {
+          postedAt: hoursAgo(base, 5),
+          quoteText: "Played the demo twice today. The magnet upgrade is a joy.",
+        }),
         member("June", "@junebakes", "pending"),
         member("Rook", "@rookdev", "pending"),
       ],
@@ -139,11 +150,26 @@ export function demoCampaigns(now = new Date()) {
       },
       { start: isoAt(base, -2), end: isoAt(base, 5) },
       [
-        member("Moss", "@mossplays", "posted", "https://x.com/mossplays/status/1000000000000000006"),
-        member("Pip", "@pipdraws", "posted", "https://x.com/pipdraws/status/1000000000000000007"),
-        member("June", "@junebakes", "posted", "https://x.com/junebakes/status/1000000000000000008"),
-        member("Rook", "@rookdev", "posted", "https://x.com/rookdev/status/1000000000000000009"),
-        member("Sable", "@sablepixels", "posted", "https://x.com/sablepixels/status/1000000000000000010"),
+        member("Moss", "@mossplays", "posted", "https://x.com/mossplays/status/1000000000000000006", {
+          postedAt: hoursAgo(base, 26),
+          quoteText: "Starlight Salvage is in Next Fest and the demo is genuinely great, go play it.",
+        }),
+        member("Pip", "@pipdraws", "posted", "https://x.com/pipdraws/status/1000000000000000007", {
+          postedAt: hoursAgo(base, 8),
+          quoteText: "The cozy space game you have been waiting for. The demo is live all week.",
+        }),
+        member("June", "@junebakes", "posted", "https://x.com/junebakes/status/1000000000000000008", {
+          postedAt: hoursAgo(base, 5),
+          quoteText: "I keep coming back to the salvage runs. The ship feels like home.",
+        }),
+        member("Rook", "@rookdev", "posted", "https://x.com/rookdev/status/1000000000000000009", {
+          postedAt: hoursAgo(base, 3),
+          quoteText: "Fest demo is up. Bring a friend, bring a magnet.",
+        }),
+        member("Sable", "@sablepixels", "posted", "https://x.com/sablepixels/status/1000000000000000010", {
+          postedAt: hoursAgo(base, 2),
+          quoteText: "This demo understands cozy. Played it twice and I am going back.",
+        }),
         member("Fern", "@fernfolk", "pending"),
       ],
       createdAt,

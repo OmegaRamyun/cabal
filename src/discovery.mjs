@@ -7,7 +7,7 @@
 // src/campaign.mjs (both re-exported where tests need them).
 
 import { jaccard } from './match.mjs';
-import { postedCount } from './campaign.mjs';
+import { postedCount, initials, avatarHue } from './campaign.mjs';
 
 export { postedCount };
 
@@ -93,10 +93,12 @@ function rowEl(doc, campaign, navigate) {
   btn.type = "button";
   const gameName = campaign.game?.name || "Untitled game";
   const tags = (campaign.game?.tags || []).join(", ");
-  btn.textContent =
+  btn.appendChild(el(doc, "span", initials(gameName), `avatar avatar-h${avatarHue(gameName)}`));
+  btn.appendChild(el(doc, "span",
     `${gameName} — ${campaign.title} — ` +
     `${memberCount(campaign)} members, ${postedCount(campaign)} posted` +
-    (tags ? ` — ${tags}` : "");
+    (tags ? ` — ${tags}` : ""),
+    "discovery-row-label"));
   if (campaign.demo) {
     const badge = el(doc, "span", "DEMO", "demo-badge");
     btn.appendChild(badge);

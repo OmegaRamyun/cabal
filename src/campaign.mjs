@@ -4,7 +4,7 @@
 //   { id, game: { name, links: { steam?, itch?, x? }, tags: string[] },
 //     title, anchorPost: { platform: 'x'|'bluesky'|'threads', url, text, author },
 //     window: { start, end } | null,
-//     members: [{ name, handle, platform?, status: 'posted'|'pending', quoteUrl? }],
+//     members: [{ name, handle, platform?, status: 'posted'|'pending', quoteUrl?, postedAt?, quoteText? }],
 //     createdAt, demo? }
 
 export const PLATFORMS = Object.freeze(["x", "bluesky", "threads"]);
@@ -154,17 +154,59 @@ export function addMember(campaign, member) {
   return next;
 }
 
-/** markPosted(campaign, handle, quoteUrl?) -> NEW campaign; that member's status becomes 'posted'. Unknown handle: returns an unchanged copy. */
-export function markPosted(campaign, handle, quoteUrl) {
+/** markPosted(campaign, handle, quoteUrl?, now?) -> NEW campaign; that member's status becomes 'posted' and gets a postedAt stamp. Unknown handle: returns an unchanged copy. */
+export function markPosted(campaign, handle, quoteUrl, now) {
   const next = clone(campaign);
   const target = String(handle ?? "").trim().toLowerCase();
+  const parsed = toTime(now ?? new Date());
+  const stamp = new Date(Number.isNaN(parsed) ? Date.now() : parsed).toISOString();
   next.members = (next.members || []).map((m) => {
     if (String(m.handle).trim().toLowerCase() !== target) return m;
-    const updated = { ...m, status: "posted" };
+    const updated = { ...m, status: "posted", postedAt: stamp };
     if (quoteUrl) updated.quoteUrl = quoteUrl;
     return updated;
   });
   return next;
+}
+
+/**
+ * relativeTime(iso, now?) -> "just now" | "5m" | "2h" | "3d" | "Nov 20".
+ * Feed-style relative timestamps. Invalid or missing input -> "" (the
+ * caller hides the timestamp). Dates 7+ days old fall back to month+day.
+ */
+export function relativeTime(iso, now) {
+  const t = Date.parse(iso);
+  if (!iso || Number.isNaN(t)) return "";
+  const base = toTime(now ?? new Date());
+  const diff = base - t;
+  if (diff < 0) return "just now";
+  const MIN = 60 * 1000, HOUR = 60 * MIN, DAY = 24 * HOUR;
+  if (diff < MIN) return "just now";
+  if (diff < HOUR) return `${Math.floor(diff / MIN)}m`;
+  if (diff < DAY) return `${Math.floor(diff / HOUR)}h`;
+  if (diff < 7 * DAY) return `${Math.floor(diff / DAY)}d`;
+  return new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+/** initials(name) -> up to 2 letters from the first two words ("Mary Jane" -> "MJ"). Handles lose the @. Empty -> "?". */
+export function initials(name) {
+  const clean = String(name ?? "").replace(/^@/, "").trim();
+  if (!clean) return "?";
+  const words = clean.split(/\s+/).filter(Boolean);
+  return words
+    .slice(0, 2)
+    .map((w) => w[0].toUpperCase())
+    .join("");
+}
+
+export const AVATAR_HUES = 6;
+
+/** avatarHue(value) -> 0..5, deterministic per string. Drives the .avatar-hN class. */
+export function avatarHue(value) {
+  const s = String(value ?? "");
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h % AVATAR_HUES;
 }
 
 export function postedCount(campaign) {

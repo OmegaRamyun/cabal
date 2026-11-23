@@ -55,6 +55,9 @@ import {
   isUpcoming,
   addMember,
   createCampaign,
+  relativeTime,
+  initials,
+  avatarHue,
 } from './campaign.mjs';
 
 export { postedCount, pendingMembers, isLive, isUpcoming, addMember, createCampaign };
@@ -178,9 +181,17 @@ function meterHtml(s) {
 
 function campaignCardHtml(campaign, { showTurnButton = false } = {}) {
   const s = ringSummary(campaign);
+  const anchorTime = relativeTime(
+    campaign.window && campaign.window.start ? campaign.window.start : campaign.createdAt,
+  );
   return `<article class="campaign-card" data-campaign-id="${esc(campaign.id)}">
+    <div class="post-head">
+      <span class="avatar avatar-h${avatarHue(campaign.anchorPost.author)}">${esc(initials(campaign.anchorPost.author))}</span>
+      <span class="post-author">${esc(campaign.anchorPost.author)}</span>
+      ${anchorTime ? `<span class="post-time">· ${esc(anchorTime)}</span>` : ''}
+    </div>
     <h3><a href="#" data-open-campaign="${esc(campaign.id)}">${esc(campaign.title)}</a>${demoBadge(campaign)}</h3>
-    <p class="anchor-preview">&ldquo;${esc(campaign.anchorPost.text)}&rdquo; — ${esc(campaign.anchorPost.author)}</p>
+    <p class="anchor-preview">&ldquo;${esc(campaign.anchorPost.text)}&rdquo;</p>
     <p class="campaign-meta">${esc(windowLabel(campaign))} · Posted ${s.posted}/${s.total}</p>
     ${meterHtml(s)}
     ${showTurnButton ? `<button type="button" data-open-composer="${esc(campaign.id)}">Open quote composer</button>` : ''}
