@@ -7,12 +7,12 @@
   <link rel="self" type="application/atom+xml" href="https://omegaramyun.github.io/cabal/campaigns.atom" />
   <link rel="alternate" href="https://omegaramyun.github.io/cabal/#/discover" />
   <entry>
-    <title>Brass Orchard launch week — help us spread the harvest</title>
-    <id>tag:omegaramyun.github.io,2026:cmp_brass001</id>
+    <title>ToonSouls launch week — help us spread the souls</title>
+    <id>tag:omegaramyun.github.io,2026:cmp_toon001</id>
     <updated>2026-11-22T09:00:00Z</updated>
-    <link rel="alternate" href="https://omegaramyun.github.io/cabal/#c=eyJhbmNob3JQb3N0Ijp7ImF1dGhvciI6IkBicmFzc29yY2hhcmQiLCJwbGF0Zm9ybSI6IngiLCJ0ZXh0IjoiQnJhc3MgT3JjaGFyZCBpcyBvdXQgbm93IOKAlCBhIGNvenkgZmFybWluZyBnYW1lIGFib3V0IGJyYXNzIGluc3RydW1lbnRzIGFuZCBiaWdnZXIgaGFydmVzdHMuIPCfjL7wn466IiwidXJsIjoiaHR0cHM6Ly94LmNvbS9icmFzc29yY2hhcmQvc3RhdHVzLzEwMDAwMDAwMDAwMDAwMDAwMDAifSwiY3JlYXRlZEF0IjoiMjAyNi0xMS0yMlQwOTowMDowMFoiLCJkZW1vIjp0cnVlLCJnYW1lIjp7ImxpbmtzIjp7Iml0Y2giOiJodHRwczovL2V4YW1wbGUtZGV2Lml0Y2guaW8vYnJhc3Mtb3JjaGFyZCIsInN0ZWFtIjoiaHR0cHM6Ly9zdG9yZS5zdGVhbXBvd2VyZWQuY29tL2FwcC8wMDAwMDAwL0JyYXNzX09yY2hhcmQvIn0sIm5hbWUiOiJCcmFzcyBPcmNoYXJkIiwidGFncyI6WyJjb3p5IiwiZmFybWluZyJdfSwiaWQiOiJjbXBfYnJhc3MwMDEiLCJtZW1iZXJzIjpbeyJoYW5kbGUiOiJAYnJhc3NvcmNoYXJkIiwibmFtZSI6IldyZW4gSGFsbG93YXkiLCJxdW90ZVVybCI6Imh0dHBzOi8veC5jb20vYnJhc3NvcmNoYXJkL3N0YXR1cy8xMDAwMDAwMDAwMDAwMDAwMDAxIiwic3RhdHVzIjoicG9zdGVkIn0seyJoYW5kbGUiOiJAbW9zc2ZpbmNoIiwibmFtZSI6Ik1vc3MgRmluY2giLCJzdGF0dXMiOiJwZW5kaW5nIn1dLCJ0aXRsZSI6IkJyYXNzIE9yY2hhcmQgbGF1bmNoIHdlZWsg4oCUIGhlbHAgdXMgc3ByZWFkIHRoZSBoYXJ2ZXN0Iiwid2luZG93Ijp7ImVuZCI6IjIwMjYtMTEtMjkiLCJzdGFydCI6IjIwMjYtMTEtMjIifX0" />
-    <link rel="related" href="https://store.steampowered.com/app/0000000/Brass_Orchard/" />
-    <author><name>@brassorchard</name></author>
-    <summary>Brass Orchard (cozy, farming) — Brass Orchard is out now — a cozy farming game about brass instruments and bigger harvests. 🌾🎺 1/2 posted. Window 2026-11-22 to 2026-11-29. Example campaign — fictional data.</summary>
+    <link rel="alternate" href="https://omegaramyun.github.io/cabal/#c=eyJhbmNob3JQb3N0Ijp7ImF1dGhvciI6IkB0b29uc291bHMiLCJwbGF0Zm9ybSI6IngiLCJ0ZXh0IjoiVG9vblNvdWxzIGlzIG91dCBub3cg4oCUIGEgY2FydG9vbiBzb3Vscy1saWtlIGFib3V0IGR5aW5nIGN1dGUgYW5kIGNvbWluZyBiYWNrIGN1dGVyLiDwn5KA4pyoIiwidXJsIjoiaHR0cHM6Ly94LmNvbS90b29uc291bHMvc3RhdHVzLzEwMDAwMDAwMDAwMDAwMDAwMDAifSwiY3JlYXRlZEF0IjoiMjAyNi0xMS0yMlQwOTowMDowMFoiLCJkZW1vIjp0cnVlLCJnYW1lIjp7ImxpbmtzIjp7Iml0Y2giOiJodHRwczovL2V4YW1wbGUtZGV2Lml0Y2guaW8vdG9vbi1zb3VscyIsInN0ZWFtIjoiaHR0cHM6Ly9zdG9yZS5zdGVhbXBvd2VyZWQuY29tL2FwcC8wMDAwMDAwL1Rvb25Tb3Vscy8ifSwibmFtZSI6IlRvb25Tb3VscyIsInRhZ3MiOlsic291bHMtbGlrZSIsImNhcnRvb24iXX0sImlkIjoiY21wX3Rvb24wMDEiLCJtZW1iZXJzIjpbeyJoYW5kbGUiOiJAdG9vbnNvdWxzIiwibmFtZSI6IldyZW4gSGFsbG93YXkiLCJxdW90ZVVybCI6Imh0dHBzOi8veC5jb20vdG9vbnNvdWxzL3N0YXR1cy8xMDAwMDAwMDAwMDAwMDAwMDAxIiwic3RhdHVzIjoicG9zdGVkIn0seyJoYW5kbGUiOiJAbW9zc2ZpbmNoIiwibmFtZSI6Ik1vc3MgRmluY2giLCJzdGF0dXMiOiJwZW5kaW5nIn1dLCJ0aXRsZSI6IlRvb25Tb3VscyBsYXVuY2ggd2VlayDigJQgaGVscCB1cyBzcHJlYWQgdGhlIHNvdWxzIiwid2luZG93Ijp7ImVuZCI6IjIwMjYtMTEtMjkiLCJzdGFydCI6IjIwMjYtMTEtMjIifX0" />
+    <link rel="related" href="https://store.steampowered.com/app/0000000/ToonSouls/" />
+    <author><name>@toonsouls</name></author>
+    <summary>ToonSouls (souls-like, cartoon) — ToonSouls is out now — a cartoon souls-like about dying cute and coming back cuter. 💀✨ 1/2 posted. Window 2026-11-22 to 2026-11-29. Example campaign — fictional data.</summary>
   </entry>
 </feed>

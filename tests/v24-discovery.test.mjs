@@ -185,12 +185,12 @@ test("mergeLists: dedupe by id, local wins, local-only appended", () => {
 
 test("data/campaigns.json: exactly one fictional demo campaign, listable", () => {
   assert.equal(staticList.version, 1);
-  assert.equal(staticList.updated, "2026-11-22");
+  assert.equal(staticList.updated, "2026-11-23");
   assert.equal(staticList.campaigns.length, 1);
   const [c] = staticList.campaigns;
   assert.equal(c.demo, true);
-  assert.equal(c.game.name, "Brass Orchard");
-  assert.deepEqual(c.game.tags, ["cozy", "farming"]);
+  assert.equal(c.game.name, "ToonSouls");
+  assert.deepEqual(c.game.tags, ["souls-like", "cartoon"]);
   assert.ok(c.game.links.steam.startsWith("https://"));
   assert.equal(isListable(c), true);
   assert.ok(c.members.length >= 2);
@@ -250,15 +250,15 @@ test("mount: renders Similar + Popular sections, row detail, DEMO badge, click n
   const text = root.textContent;
   assert.ok(text.includes("Similar games"));
   assert.ok(text.includes("Popular"));
-  assert.ok(text.includes("Brass Orchard"));
-  assert.ok(text.includes("Brass Orchard launch week"));
+  assert.ok(text.includes("ToonSouls"));
+  assert.ok(text.includes("ToonSouls launch week"));
   assert.ok(text.includes("2 members, 1 posted"));
-  assert.ok(text.includes("cozy, farming"));
+  assert.ok(text.includes("souls-like, cartoon"));
   assert.ok(text.includes("DEMO"));
 
   const buttons = root.querySelectorAll("button");
   assert.ok(buttons.length >= 2);
   buttons[0].click();
   assert.equal(navigated.length, 1);
-  assert.ok(["cmp_brass001", "cmp_plain001"].includes(navigated[0]));
+  assert.ok(["cmp_toon001", "cmp_plain001"].includes(navigated[0]));
 });
