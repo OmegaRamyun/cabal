@@ -1,0 +1,36 @@
+:root {
+  color-scheme: dark light;
+  --bg: #14161a; --fg: #e6e8eb; --muted: #9aa3ad; --card: #1d2026;
+  --line: #2f343c; --accent: #6aa9ff;
+}
+@media (prefers-color-scheme: light) {
+  :root { --bg: #fafafa; --fg: #1b1d21; --muted: #5a626c; --card: #fff; --line: #d8dce1; --accent: #1a5fd0; }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+header, main { max-width: 52rem; margin: 0 auto; padding: 1rem; }
+h1 { margin: 0.5rem 0; }
+h2 { margin: 0 0 0.25rem; }
+a { color: var(--accent); }
+nav { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
+nav a {
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 0.75rem;
+  border: 1px solid var(--line); border-radius: 6px; text-decoration: none;
+}
+section {
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+  padding: 1rem; margin: 0 0 1rem;
+}
+.explainer { color: var(--muted); margin: 0 0 0.75rem; }
+.mount { min-height: 1rem; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button, input, select { min-height: 44px; }
+button, select, input, textarea {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 0.4rem 0.75rem;
+}
+button { cursor: pointer; }
+textarea { width: 100%; min-height: 6rem; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
