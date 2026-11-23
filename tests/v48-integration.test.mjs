@@ -132,12 +132,13 @@ describe('V48 format tag on Nostr events', () => {
 });
 
 describe('V48 formatId survives the campaign lifecycle', () => {
-  test('normalizeCampaign keeps formatId (preselected creation sets it after createCampaign)', () => {
+  test('normalizeCampaign migrates legacy formatId into formatIds and drops legacy key', () => {
     const ring = makeRing();
     assert.equal('formatId' in ring, false);
     ring.formatId = FMT;
     const normalized = normalizeCampaign(ring);
-    assert.equal(normalized.formatId, FMT);
+    assert.deepEqual(normalized.formatIds, [FMT]);
+    assert.equal('formatId' in normalized, false);
     assert.equal(normalized.id, ring.id);
   });
 });

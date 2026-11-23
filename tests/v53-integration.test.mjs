@@ -134,6 +134,6 @@ describe('demo data runs formats', () => {
   test('seeded launch-week ring runs fmt_algoigno', () => {
     const seeded = demoCampaigns(new Date('2026-11-23T12:00:00Z'));
     const launch = seeded.find((c) => c.id === 'cmp_demo_launch');
-    assert.equal(launch.formatId, 'fmt_algoigno');
+    assert.deepEqual(launch.formatIds, ['fmt_algoigno']);
   });
 });

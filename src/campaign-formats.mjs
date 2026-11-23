@@ -106,20 +106,81 @@ export function createFormat(input = {}) {
   return format;
 }
 
-/** A ring's format id, or null. Untemplated rings are normal, not an error. */
-export function formatIdForRing(ring) {
-  const id = isObj(ring) ? ring.formatId : null;
-  return isNonEmptyString(id) ? id.trim() : null;
+function normalizeFormatId(id) {
+  if (typeof id !== "string") return null;
+  const norm = id.trim().toLowerCase();
+  return FORMAT_ID_RE.test(norm) ? norm : null;
 }
 
-/** Rings whose formatId matches (case-insensitive); rings without one ignored. */
+/**
+ * formatIdsForRing(ring) -> array of template ids, normalized (trimmed,
+ * lowercased, deduped, order-preserved, invalid ids dropped). Accepts both
+ * the canonical `ring.formatIds` array and a legacy `ring.formatId` string
+ * (placed first if both are present). Never throws.
+ */
+export function formatIdsForRing(ring) {
+  if (!isObj(ring)) return [];
+  const out = [];
+  const seen = new Set();
+  const push = (v) => {
+    const id = normalizeFormatId(v);
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    out.push(id);
+  };
+  push(ring.formatId);
+  if (Array.isArray(ring.formatIds)) {
+    for (const v of ring.formatIds) push(v);
+  }
+  return out;
+}
+
+/**
+ * Legacy alias returning the first running format id, or null.
+ * Untemplated rings are normal, not an error.
+ */
+export function formatIdForRing(ring) {
+  return formatIdsForRing(ring)[0] ?? null;
+}
+
+/**
+ * adoptTemplate(ring, formatId) -> NEW ring object with the id appended to
+ * `formatIds` (and legacy `formatId` dropped). Idempotent: adopting a template
+ * the ring already runs returns an equal ring. Invalid id or non-object ring
+ * returns the ring unchanged (does not throw).
+ */
+export function adoptTemplate(ring, formatId) {
+  if (!isObj(ring)) return ring;
+  const id = normalizeFormatId(formatId);
+  if (!id) return ring;
+  const current = formatIdsForRing(ring);
+  const { formatId: _legacy, ...rest } = ring;
+  if (current.includes(id)) return { ...rest, formatIds: current };
+  return { ...rest, formatIds: [...current, id] };
+}
+
+/**
+ * removeTemplate(ring, formatId) -> NEW ring object without the id in
+ * `formatIds` (and legacy `formatId` dropped). Removing a template the ring
+ * does not run (or an invalid id / non-object ring) is a no-op returning the
+ * ring unchanged. Does not throw.
+ */
+export function removeTemplate(ring, formatId) {
+  if (!isObj(ring)) return ring;
+  const id = normalizeFormatId(formatId);
+  const current = formatIdsForRing(ring);
+  if (!id || !current.includes(id)) return ring;
+  const { formatId: _legacy, ...rest } = ring;
+  return { ...rest, formatIds: current.filter((x) => x !== id) };
+}
+
+/** Rings running `formatId` (membership via formatIdsForRing, case-insensitive). */
 export function ringsRunningFormat(formatId, rings) {
-  if (!isNonEmptyString(formatId)) return [];
-  const want = lc(formatId);
-  return (Array.isArray(rings) ? rings : []).filter((r) => {
-    const id = formatIdForRing(r);
-    return id !== null && lc(id) === want;
-  });
+  const want = normalizeFormatId(formatId);
+  if (!want) return [];
+  return (Array.isArray(rings) ? rings : []).filter((r) =>
+    formatIdsForRing(r).includes(want),
+  );
 }
 
 // Accepts a Map(id -> count), an array of [id, count] pairs, an array of
