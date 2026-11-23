@@ -16,6 +16,7 @@ import * as campaignPage from './src/campaign-page.mjs';
 import * as quoteComposer from './src/quote-composer.mjs';
 import * as discovery from './src/discovery.mjs';
 import * as demo from './src/demo.mjs';
+import * as updater from './src/updater.mjs';
 import * as terms from './src/terms.mjs';
 import * as discord from './src/discord.mjs';
 import * as kickstarter from './src/kickstarter.mjs';
@@ -291,6 +292,10 @@ function renderDemoBanner() {
 function start() {
   demo.seedDemo(globalThis.localStorage);
   renderDemoBanner();
+  // Auto-updater: version.json baseline at load, 60s poll + focus/visible
+  // re-checks, banner only — never a forced reload (see src/updater.mjs).
+  const updateEl = document.querySelector('#update-banner');
+  if (updateEl) updater.mount(updateEl, {});
   window.addEventListener('hashchange', route);
   route();
 }
