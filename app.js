@@ -80,6 +80,53 @@ export function parseHash(hash = '') {
   return { view: 'home' };
 }
 
+/**
+ * navItemForView(view) -> 'home' | 'discover' | 'tools' — which top-bar
+ * item is current for a route. Campaign, composer and link-intent land
+ * on Home; Terms lives under the Tools gear menu. Pure, tested.
+ */
+export function navItemForView(view = '') {
+  if (view === 'discover') return 'discover';
+  if (view === 'tools' || view === 'terms') return 'tools';
+  return 'home';
+}
+
+function syncNav(view) {
+  const current = navItemForView(view);
+  document.querySelectorAll('[data-nav]').forEach((el) => {
+    if (el.dataset.nav === current) el.setAttribute('aria-current', 'page');
+    else el.removeAttribute('aria-current');
+  });
+}
+
+function wireToolsMenu() {
+  const button = document.querySelector('#tools-menu-button');
+  const list = document.querySelector('#tools-menu-list');
+  if (!button || !list) return;
+  const close = () => {
+    list.hidden = true;
+    button.setAttribute('aria-expanded', 'false');
+  };
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const willOpen = list.hidden;
+    list.hidden = !willOpen;
+    button.setAttribute('aria-expanded', String(willOpen));
+  });
+  document.addEventListener('click', (event) => {
+    if (!list.hidden && !event.target.closest('.nav-menu')) close();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !list.hidden) {
+      close();
+      button.focus();
+    }
+  });
+  list.addEventListener('click', (event) => {
+    if (event.target.closest('a')) close();
+  });
+}
+
 function navigate(view, params = {}) {
   if (view === 'campaign' && params.campaignId) {
     window.location.hash = `#/campaign/${encodeURIComponent(params.campaignId)}`;
@@ -231,6 +278,7 @@ async function route() {
   const view = document.querySelector('#view');
   if (!view) return;
   const parsed = parseHash(window.location.hash);
+  syncNav(parsed.view);
   if (parsed.view === 'link') {
     const { campaign, error } = decodeCampaignLink(parsed.hash);
     if (error || !campaign) {
@@ -292,6 +340,7 @@ function renderDemoBanner() {
 function start() {
   demo.seedDemo(globalThis.localStorage);
   renderDemoBanner();
+  wireToolsMenu();
   // Auto-updater: version.json baseline at load, 60s poll + focus/visible
   // re-checks, banner only — never a forced reload (see src/updater.mjs).
   const updateEl = document.querySelector('#update-banner');
