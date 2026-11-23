@@ -90,6 +90,10 @@ describe('nodeViewGraph', () => {
   test('positions are keyed by node id, finite, and in bounds', () => {
     const { graph, positions } = nodeViewGraph({ rings, formats, usage: null }, { width: 800, height: 520 });
     assert.ok(positions instanceof Map);
+    // Seam (caught by the V53 smoke): the node view reads positions from
+    // graph.positions, so they must be attached to the graph as well.
+    assert.ok(graph.positions instanceof Map);
+    assert.strictEqual(graph.positions, positions);
     for (const n of graph.nodes) {
       const p = positions.get(n.id);
       assert.ok(p && Number.isFinite(p.x) && Number.isFinite(p.y), `position for ${n.id}`);

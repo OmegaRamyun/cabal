@@ -111,14 +111,18 @@ export function openNodeTarget(node) {
 /**
  * nodeViewGraph({ rings, formats, usage }, { width, height }) ->
  * { graph, positions } — the node view's input, built from the same lists
- * the old discovery view used. Pure, tested. The radiusFor adapter the
- * mount site passes is (n) => graph.radiusForWeight(n.weight, n.kind);
- * it lives in renderCampaigns, not here, because layout and drawing must
- * share one radius function at the mount site.
+ * the old discovery view used. Pure, tested. `positions` is attached to
+ * the graph as well as returned top-level: the node view reads positions
+ * from `graph.positions` (V52 ctx contract), so a bare graph without
+ * them renders the empty state. The radiusFor adapter the mount site
+ * passes is (n) => graph.radiusForWeight(n.weight, n.kind); it lives in
+ * renderCampaigns, not here, because layout and drawing must share one
+ * radius function at the mount site.
  */
 export function nodeViewGraph({ rings, formats, usage } = {}, { width = 800, height = 520 } = {}) {
   const g = graph.buildGraph({ rings, formats, usage });
-  return { graph: g, positions: graph.layoutGraph(g, { width, height }) };
+  const positions = graph.layoutGraph(g, { width, height });
+  return { graph: { ...g, positions }, positions };
 }
 
 /** parseHash(hash) -> { view, campaignId?, hash? } — pure, tested. */

@@ -33,6 +33,34 @@ view instead of the split Campaigns/Similar/Popular lists.
 - V52 `task/V52-node-view` (`4a4bd0c` + fix `f4c7eb7`) -> v0.2.26, 428/428.
 - V53 integration -> v0.2.27 (this doc).
 
+## Post-merge seam fix (caught by the smoke, not by unit tests)
+The first live smoke showed the net rendering EMPTY (0 nodes) although
+`buildGraph` produced 6 nodes in-page: the node view reads positions
+from `graph.positions` (V52 ctx contract), and the integration passed
+`positions` only as a separate ctx field. Fix: `nodeViewGraph` attaches
+`positions` to the returned graph as well as top-level. Regression test
+added (`graph.positions instanceof Map`, identical to top-level).
+Fix commit -> v0.2.28.
+
+## Live-browser verification (Playwright headless shell, localhost:8123)
+- Main smoke (`/tmp/pwshot/shot-v53.mjs`): **18/18 PASS** — net renders
+  6 nodes / 5 edges / 2 `runs` edges from demo data; format + ring node
+  taps open the detail panel and Open lands on the template/ring page;
+  cold ring creation 4.8s, cold template creation 3.7s (both < 60s).
+  Screenshots: `smoke-v53-net.png`, `smoke-v53-panel.png`.
+- Extra (`/tmp/pwshot/extra-v53.mjs`): **8/8 PASS** — mobile 360px halos
+  min 44.0px; drag pan + wheel zoom move the viewBox; Tab reaches a node
+  (Tab #12, after nav/buttons/chips), Enter opens the panel, Escape
+  clears; reduced-motion stylesheet rule present, `.node-item` has
+  animation-name none + no transition. Screenshot: `smoke-v53-mobile.png`.
+- Console errors: only the two sandbox `wss://` relay blocks (proxy
+  cannot reach damus/nos.lol from the VM) — expected noise, same as V48;
+  the app shows the honest couldn't-reach note. No pageerrors, no other
+  failed requests.
+- Known nit (pre-existing V45/V46 behaviour, not a V53 regression): the
+  relay re-mount ~6s after load rebuilds the view and resets keyboard
+  focus to the body. A user tabbing at that moment restarts from the nav.
+
 ## Manual DOM check notes (Playwright smoke, local server)
 - `#/campaigns` renders the net: ring nodes (circles) + format nodes
   (hexagons) from demo data, edges visible, node size scales with weight.
