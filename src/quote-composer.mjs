@@ -172,19 +172,15 @@ export function mount(rootEl, ctx = {}) {
 
   rootEl.append(section);
 
-  const colours = { pass: '', review: '#b45309', warn: '#b91c1c' };
-
   function update() {
     const draft = textarea.value;
     if (!draft.trim()) {
       warning.dataset.verdict = 'pass';
-      warning.style.color = '';
       warning.textContent = 'Write your quote-post in your own words — the gate checks it as you type.';
     } else {
       const result = scoreDraft(draft, campaign, me);
       const msg = gateMessage(result);
       warning.dataset.verdict = msg.verdict;
-      warning.style.color = colours[msg.verdict];
       warning.textContent = msg.text;
     }
     // Intent links stay enabled at every gate verdict. The only thing that

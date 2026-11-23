@@ -1,76 +1,290 @@
-:root {
-  color-scheme: dark light;
-  --bg: #14161a; --fg: #e6e8eb; --muted: #9aa3ad; --card: #1d2026;
-  --line: #2f343c; --accent: #6aa9ff;
-}
-@media (prefers-color-scheme: light) {
-  :root { --bg: #fafafa; --fg: #1b1d21; --muted: #5a626c; --card: #fff; --line: #d8dce1; --accent: #1a5fd0; }
-}
-* { box-sizing: border-box; }
-body {
-  margin: 0; background: var(--bg); color: var(--fg);
-  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-}
-header, main { max-width: 52rem; margin: 0 auto; padding: 1rem; }
-h1 { margin: 0.5rem 0; }
-h2 { margin: 0 0 0.25rem; }
-a { color: var(--accent); }
-nav { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
-nav a {
-  display: inline-flex; align-items: center; min-height: 44px; padding: 0 0.75rem;
-  border: 1px solid var(--line); border-radius: 6px; text-decoration: none;
-}
-section {
-  background: var(--card); border: 1px solid var(--line); border-radius: 8px;
-  padding: 1rem; margin: 0 0 1rem;
-}
-.explainer { color: var(--muted); margin: 0 0 0.75rem; }
-.mount { min-height: 1rem; }
-button, input, select, textarea { font: inherit; color: inherit; }
-button, input, select { min-height: 44px; }
-button, select, input, textarea {
-  background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 0.4rem 0.75rem;
-}
-button { cursor: pointer; }
-textarea { width: 100%; min-height: 6rem; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Cabal Ring Kit — v0.2 polish (V27).
+ * Base layer is Pico.css v2.1.1, vendored at vendor/pico.min.css
+ * (classless, MIT, auto dark mode via prefers-color-scheme).
+ * This file is the Cabal layer: tokens, layout, components, motion.
+ * Pico owns the base; nothing here re-implements what Pico already does.
+ */
 
-/* ---- v0.2: campaign-first ---- */
-footer { max-width: 52rem; margin: 0 auto; padding: 0 1rem 1.5rem; }
-.demo-badge {
-  display: inline-block; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em;
-  color: #14161a; background: #f5c518; border-radius: 4px; padding: 0.05rem 0.35rem;
-  vertical-align: middle; margin-left: 0.35rem;
+/* ---- design tokens ---- */
+:root {
+  /* Motion identity: Corporate. One easing, three durations. */
+  --cabal-ease: cubic-bezier(0.2, 0, 0, 1);
+  --cabal-duration-quick: 120ms;
+  --cabal-duration-standard: 250ms;
+  --cabal-duration-slow: 400ms;
+
+  --cabal-radius: 0.75rem;
+
+  /* Demo amber — soft tint, never a siren. */
+  --cabal-amber-bg: #fff8e1;
+  --cabal-amber-border: #ecd27a;
+  --cabal-amber-accent: #8a6d00;
+
+  /* Status colors. */
+  --cabal-posted: #2e7d32;
+  --cabal-danger: #b91c1c;
+  --cabal-review: #b45309;
+
+  /* Pico tuning: softer corners across controls and cards. */
+  --pico-border-radius: 0.5rem;
 }
-.cabal-demo-banner {
-  background: #f5c518; color: #14161a; border-radius: 8px;
-  padding: 0.75rem 1rem; margin-top: 1rem;
-  display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --cabal-amber-bg: rgba(245, 197, 24, 0.1);
+    --cabal-amber-border: rgba(245, 197, 24, 0.35);
+    --cabal-amber-accent: #f5c518;
+    --cabal-posted: #7ec98a;
+    --cabal-danger: #f87171;
+    --cabal-review: #f59e0b;
+  }
 }
-.cabal-demo-banner button {
-  background: #14161a; color: #f5c518; border-color: #14161a;
+[data-theme="dark"] {
+  --cabal-amber-bg: rgba(245, 197, 24, 0.1);
+  --cabal-amber-border: rgba(245, 197, 24, 0.35);
+  --cabal-amber-accent: #f5c518;
+  --cabal-posted: #7ec98a;
+  --cabal-danger: #f87171;
+  --cabal-review: #f59e0b;
 }
-.form-error { color: #ff8a80; font-weight: 600; }
-label { display: block; margin: 0.5rem 0; }
-label input, label select, label textarea { display: block; width: 100%; margin-top: 0.25rem; }
-.campaign-card h3 { margin: 0 0 0.25rem; }
-.anchor-preview { color: var(--muted); font-style: italic; }
-.campaign-meta { color: var(--muted); font-size: 0.9rem; }
-.ring-list { list-style: none; padding: 0; margin: 0; }
-.ring-member {
-  display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline;
-  padding: 0.5rem 0; border-top: 1px solid var(--line);
+
+/* ---- layout ---- */
+header, main, footer { max-width: 54rem; margin: 0 auto; padding: 1rem; }
+header { border-bottom: 1px solid var(--pico-muted-border-color); padding-bottom: 1rem; }
+h1 { margin: 0.25rem 0 0.5rem; }
+.explainer { color: var(--pico-muted-color); margin: 0 0 0.75rem; }
+.mount { min-height: 1rem; }
+footer { padding-top: 0; }
+
+/* ---- nav: links that read as buttons, one clear row ---- */
+nav { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 0.5rem; margin-top: 0.75rem; }
+nav a {
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 0.875rem;
+  border: 1px solid var(--pico-muted-border-color); border-radius: 0.5rem;
+  /* inherit, not var(--pico-color): Pico overrides --pico-color on <a>
+     to the link blue, and on <button> to primary-inverse (white). */
+  text-decoration: none; color: inherit; background: transparent;
+  transition: background-color var(--cabal-duration-quick) var(--cabal-ease),
+    border-color var(--cabal-duration-quick) var(--cabal-ease);
 }
-.member-status { color: var(--muted); font-size: 0.9rem; }
-.ring-member[data-status="posted"] .member-status { color: #7ec98a; }
-.quote-gate { font-weight: 600; }
-.quote-intents { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0; }
-.quote-intents a[aria-disabled="true"] { opacity: 0.45; pointer-events: none; }
-.discovery-row { list-style: none; margin: 0 0 0.5rem; }
-.discovery-row-btn { width: 100%; text-align: left; }
+nav a:hover {
+  background: var(--pico-form-element-selected-background-color);
+  border-color: var(--pico-muted-color);
+  text-decoration: none;
+}
+
+/* ---- cards: top-level sections are cards; nested sections are dividers ---- */
+main section {
+  background: var(--pico-card-background-color);
+  border: 1px solid var(--pico-muted-border-color);
+  border-radius: var(--cabal-radius);
+  box-shadow: var(--pico-card-box-shadow);
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+main section section {
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--pico-muted-border-color);
+  border-radius: 0;
+  box-shadow: none;
+  padding: 1rem 0 0;
+  margin: 1rem 0 0;
+}
+main section section:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+
+/* ---- buttons: submits and .primary are filled; plain buttons are outline ---- */
+button[type="button"] {
+  background: transparent;
+  border-color: var(--pico-muted-border-color);
+  /* inherit, not var(--pico-color): Pico sets --pico-color to
+     primary-inverse (white) on buttons, which is invisible here. */
+  color: inherit;
+  transition: background-color var(--cabal-duration-quick) var(--cabal-ease),
+    border-color var(--cabal-duration-quick) var(--cabal-ease),
+    color var(--cabal-duration-quick) var(--cabal-ease),
+    box-shadow var(--cabal-duration-quick) var(--cabal-ease),
+    transform var(--cabal-duration-quick) var(--cabal-ease);
+}
+button[type="button"]:hover {
+  background: var(--pico-form-element-selected-background-color);
+  border-color: var(--pico-muted-color);
+}
+button[type="button"]:active,
+button[type="submit"]:active,
+a[role="button"]:active { transform: scale(0.98); }
+button.primary,
+button.quote-posted {
+  background: var(--pico-primary-background);
+  border-color: var(--pico-primary-border);
+  color: var(--pico-primary-inverse);
+}
+button.primary:hover,
+button.quote-posted:hover {
+  background: var(--pico-primary-hover-background);
+  border-color: var(--pico-primary-hover-border);
+}
+
+/* ---- forms ---- */
+.form-error { color: var(--cabal-danger); font-weight: 600; }
+label input, label select, label textarea { margin-top: 0.25rem; }
 #campaign-share-link { width: min(100%, 34rem); }
 pre {
   white-space: pre-wrap; word-break: break-word;
-  background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 0.75rem;
+  background: var(--pico-code-background-color);
+  border: 1px solid var(--pico-muted-border-color);
 }
-.primary { border-color: var(--accent); }
+
+/* ---- empty states: quiet dashed panels, not bare sentences ---- */
+.empty-state {
+  color: var(--pico-muted-color);
+  border: 1px dashed var(--pico-muted-border-color);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  text-align: center;
+}
+
+/* ---- demo: badge + banner, intentional instead of loud ---- */
+.demo-badge {
+  display: inline-block; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em;
+  color: #14161a; background: #f5c518; border-radius: 999px; padding: 0.1rem 0.45rem;
+  vertical-align: middle; margin-left: 0.35rem;
+}
+.cabal-demo-banner {
+  background: var(--cabal-amber-bg);
+  border: 1px solid var(--cabal-amber-border);
+  border-left: 4px solid var(--cabal-amber-accent);
+  color: var(--pico-color);
+  border-radius: var(--cabal-radius);
+  padding: 0.75rem 1rem;
+  margin-top: 1rem;
+  display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: center;
+  animation: view-enter var(--cabal-duration-standard) var(--cabal-ease) both;
+}
+.cabal-demo-banner strong { color: var(--cabal-amber-accent); letter-spacing: 0.05em; }
+.cabal-demo-banner span { flex: 1 1 16rem; }
+
+/* ---- home: game header, campaign cards, meter ---- */
+.game-header h2 { margin-bottom: 0.25rem; }
+.game-links { margin: 0 0 0.25rem; }
+.game-tags { color: var(--pico-muted-color); font-size: 0.9rem; margin: 0 0 0.75rem; }
+.campaign-card { transition: transform 150ms var(--cabal-ease), box-shadow 150ms var(--cabal-ease), border-color 150ms var(--cabal-ease); }
+.campaign-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--pico-box-shadow);
+  border-color: var(--pico-primary-border);
+}
+.campaign-card h3 { margin: 0 0 0.25rem; }
+.anchor-preview { color: var(--pico-muted-color); font-style: italic; }
+.campaign-meta { color: var(--pico-muted-color); font-size: 0.9rem; margin-bottom: 0.25rem; }
+
+/* Posted-progress meter: track + fill that grows in on mount. */
+.ring-progress {
+  height: 0.5rem; border-radius: 999px;
+  background: var(--pico-progress-background-color);
+  overflow: hidden; margin: 0.5rem 0 0.25rem;
+}
+.ring-progress-fill {
+  display: block; height: 100%; border-radius: inherit;
+  background: var(--pico-primary-background);
+  animation: meter-in var(--cabal-duration-slow) var(--cabal-ease) both;
+}
+
+/* ---- campaign page: anchor, share, ring ---- */
+.campaign-anchor { margin-bottom: 1rem; }
+.campaign-anchor blockquote { margin: 0.5rem 0; }
+.anchor-meta { color: var(--pico-muted-color); font-size: 0.9rem; }
+.campaign-share input { font-size: 0.9rem; }
+.ring-list { list-style: none; padding: 0; margin: 0; }
+.ring-member {
+  display: flex; flex-wrap: wrap; gap: 0.25rem 0.5rem; align-items: center;
+  padding: 0.625rem 0; border-top: 1px solid var(--pico-muted-border-color);
+  animation: row-in var(--cabal-duration-standard) var(--cabal-ease) both;
+}
+.ring-member:first-child { border-top: 0; }
+.ring-member:nth-child(2) { animation-delay: 30ms; }
+.ring-member:nth-child(3) { animation-delay: 60ms; }
+.ring-member:nth-child(4) { animation-delay: 90ms; }
+.ring-member:nth-child(5) { animation-delay: 120ms; }
+.ring-member:nth-child(6) { animation-delay: 150ms; }
+.member-status {
+  margin-left: auto; font-size: 0.8rem; font-weight: 600;
+  padding: 0.1rem 0.5rem; border-radius: 999px;
+  background: var(--pico-muted-border-color); color: var(--pico-muted-color);
+}
+.ring-member[data-status="posted"] .member-status {
+  background: color-mix(in srgb, var(--cabal-posted) 15%, transparent);
+  color: var(--cabal-posted);
+}
+
+/* ---- composer: anchor card, gate, intent links ---- */
+.quote-anchor {
+  background: var(--pico-card-sectioning-background-color);
+  border-left: 3px solid var(--pico-primary);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+.quote-anchor-label {
+  font-size: 0.8rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--pico-muted-color); margin: 0 0 0.25rem;
+}
+.quote-anchor-author { color: var(--pico-muted-color); font-size: 0.9rem; margin: 0 0 0.25rem; }
+.quote-anchor blockquote { margin: 0.25rem 0; }
+.quote-gate { font-weight: 600; }
+.quote-gate[data-verdict="review"] { color: var(--cabal-review); }
+.quote-gate[data-verdict="warn"] { color: var(--cabal-danger); }
+.quote-intents { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0; }
+.quote-intents a {
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0.5rem 1rem;
+  border: 1px solid var(--pico-muted-border-color); border-radius: 0.5rem;
+  text-decoration: none; color: inherit; background: transparent;
+  transition: background-color var(--cabal-duration-quick) var(--cabal-ease),
+    border-color var(--cabal-duration-quick) var(--cabal-ease),
+    transform var(--cabal-duration-quick) var(--cabal-ease);
+}
+.quote-intents a:hover {
+  background: var(--pico-form-element-selected-background-color);
+  border-color: var(--pico-muted-color);
+  text-decoration: none;
+}
+.quote-intents a:active { transform: scale(0.98); }
+.quote-intents a[aria-disabled="true"] { opacity: 0.45; pointer-events: none; }
+.quote-limit { color: var(--cabal-danger); font-weight: 600; }
+
+/* ---- discovery: rows as full-width buttons with lift ---- */
+.discovery-row { list-style: none; margin: 0 0 0.5rem; }
+.discovery-row-btn {
+  width: 100%; text-align: left;
+  transition: transform 150ms var(--cabal-ease), box-shadow 150ms var(--cabal-ease),
+    background-color var(--cabal-duration-quick) var(--cabal-ease),
+    border-color var(--cabal-duration-quick) var(--cabal-ease);
+}
+.discovery-row-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--pico-box-shadow);
+}
+
+/* ---- terms: long-form reading ---- */
+.cabal-terms p { max-width: 60ch; }
+
+/* ---- route entrance: one consistent entry, fade + 8px rise ---- */
+#view > * { animation: view-enter var(--cabal-duration-standard) var(--cabal-ease) both; }
+@keyframes view-enter {
+  from { opacity: 0; transform: translateY(8px); }
+}
+@keyframes row-in {
+  from { opacity: 0; transform: translateY(6px); }
+}
+@keyframes meter-in {
+  from { width: 0; }
+}
+
+/* ---- reduced motion: everything snaps to its final state ---- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
