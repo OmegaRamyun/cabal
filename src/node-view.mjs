@@ -1534,6 +1534,34 @@ export function mount(rootEl, ctx = {}) {
       }
     }
 
+    // V60: a template is the node of everybody who has posted it — show the
+    // devs behind the posts, not just the ring count. Posters come from the
+    // shell (ctx.postersByFormat, built from the same rings as the graph);
+    // without it the panel simply shows no roster.
+    if (node.kind === "format") {
+      const posters =
+        ctx.postersByFormat instanceof Map
+          ? ctx.postersByFormat.get(String(node.ref || "").toLowerCase()) || []
+          : [];
+      if (posters.length > 0) {
+        panel.appendChild(el(doc, "p", "Posted by", "node-panel-subhead"));
+        const plist = el(doc, "ul", null, "node-panel-posters");
+        for (const p of posters) {
+          const li = el(doc, "li");
+          li.appendChild(el(doc, "span", p.name || p.handle, "node-panel-poster-name"));
+          const inRings = (p.rings || [])
+            .map((x) => x.ringTitle)
+            .filter(Boolean)
+            .join(", ");
+          if (inRings) {
+            li.appendChild(el(doc, "span", `in ${inRings}`, "node-panel-poster-rings"));
+          }
+          plist.appendChild(li);
+        }
+        panel.appendChild(plist);
+      }
+    }
+
     const openBtn = el(
       doc,
       "button",

@@ -684,13 +684,15 @@ export function mount(rootEl, ctx) {
           window: null,
           creator,
           key: generateCampaignKey().key,
+          // V60: a preselected template is stored canonically as formatIds,
+          // never as a legacy singular formatId.
+          ...(ctx && ctx.formatId ? { formatIds: [ctx.formatId] } : {}),
         });
       } catch (err) {
         errEl.textContent = err.message;
         errEl.hidden = false;
         return;
       }
-      if (ctx && ctx.formatId) campaign.formatId = ctx.formatId;
       const campaigns = [...(store.campaigns || []), campaign];
       store.saveCampaigns(campaigns);
       store.campaigns = campaigns;

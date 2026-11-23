@@ -298,7 +298,7 @@ function renderSyncPanel(campaign) {
 }
 
 function renderCampaign(view, id, opts = {}) {
-  return findCampaign(id).then((campaign) => {
+  return findCampaign(id).then(async (campaign) => {
     if (!campaign) {
       renderNotFound(view, id);
       return;
@@ -329,6 +329,33 @@ function renderCampaign(view, id, opts = {}) {
           const { relays } = nostr.loadRelays(globalThis.localStorage);
           const client = nostr.createRelayClient({ relays });
           await nostr.publishRemoval(client, campaign, { by: store.me?.handle });
+        } catch {
+          // Local removal stands; relay republish retries from the panel.
+        }
+      },
+      // V60: ring-page templates section — formats + rings + usage for the
+      // pickers, and adoption/removal callbacks that republish the ring's
+      // kind-30078 event so relays learn the new template list.
+      // Best-effort, same as the removal republish above.
+      formats: await loadMergedFormats(),
+      rings: store.campaigns,
+      usage: usageCache,
+      onTemplateAdopted: async ({ campaign: updated }) => {
+        if (!updated || !nostr.hasCampaignKey(updated)) return;
+        try {
+          const { relays } = nostr.loadRelays(globalThis.localStorage);
+          const client = nostr.createRelayClient({ relays });
+          await nostr.publishAdoption(client, updated);
+        } catch {
+          // Local adoption stands; relay republish retries from the panel.
+        }
+      },
+      onTemplateRemoved: async ({ campaign: updated }) => {
+        if (!updated || !nostr.hasCampaignKey(updated)) return;
+        try {
+          const { relays } = nostr.loadRelays(globalThis.localStorage);
+          const client = nostr.createRelayClient({ relays });
+          await nostr.publishAdoption(client, updated);
         } catch {
           // Local removal stands; relay republish retries from the panel.
         }
@@ -486,9 +513,17 @@ async function renderCampaigns(view) {
     const { graph: g, positions } = nodeViewGraph(
       { rings: merged, formats: formatsList, usage: usage || null },
     );
+    // V60: template nodes are the people who posted them — the panel roster
+    // is built from the same rings as the graph, keyed by lowercase format id.
+    const postersByFormat = new Map();
+    for (const f of formatsList) {
+      const posters = formats.postersForFormat(f.id, merged);
+      if (posters.length) postersByFormat.set(String(f.id).toLowerCase(), posters);
+    }
     nodeView.mount(view, {
       graph: g,
       positions,
+      postersByFormat,
       // The radius adapter the V51 verifier required: layout and drawing
       // share one radius function, or the net crowds (see verify-v52.md).
       radiusFor: (n) => graph.radiusForWeight(n.weight, n.kind),
@@ -550,6 +585,23 @@ async function renderFormat(view, formatId) {
       usageNote: usage ? usageNoteCache : null,
       navigate: (c) => navigate('campaign', { campaignId: c.id }),
       startHref: `#/rings/${encodeURIComponent(format.id)}`,
+      // V60: wire the adopt picker to the live store, and republish the
+      // ring's kind-30078 event so relays learn the new template.
+      // Best-effort: a failed republish never undoes the local adoption;
+      // the sync panel can retry it.
+      store,
+      me: store.me,
+      myRings: store.campaigns,
+      onAdopt: async (updatedRing) => {
+        if (!nostr.hasCampaignKey(updatedRing)) return;
+        try {
+          const { relays } = nostr.loadRelays(globalThis.localStorage);
+          const client = nostr.createRelayClient({ relays });
+          await nostr.publishAdoption(client, updatedRing);
+        } catch {
+          // Local adoption stands; relay republish retries from the panel.
+        }
+      },
     });
   };
   mountIt(usageCache);
