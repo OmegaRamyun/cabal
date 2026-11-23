@@ -290,6 +290,94 @@ export function markPostContributed(campaign, postId, handle, details = {}) {
 
 // ----------------------------------------------------------------- DOM ---
 
+// ------------------------------------------------- creator removal (V43c) ---
+// Spec section 17b/17d. Model shapes: campaign.createdBy (handle),
+// campaign.removedMembers: [{ handle, removedAt, removedBy }].
+// Delegates to campaignModel.removeMember / isRemoved when V43a lands;
+// local fallbacks match the spec shapes. UI updates local state only —
+// publishing the removal to the relay is V43b's job.
+
+export const REMOVED_NOTICE = 'You were removed from this ring. You can still read it.';
+
+function stripAt(h) {
+  return String(h ?? '').trim().replace(/^@+/, '');
+}
+
+function sameHandle(a, b) {
+  const x = stripAt(a).toLowerCase();
+  return x !== '' && x === stripAt(b).toLowerCase();
+}
+
+/** Display form of a handle: always exactly one leading "@". */
+export function atHandle(handle) {
+  const h = stripAt(handle);
+  return h ? `@${h}` : '';
+}
+
+/** Confirm-step copy (spec 17d, verbatim). */
+export function removeConfirmCopy(handle) {
+  return `Remove ${atHandle(handle)} from this ring? Their past posts stay; they can't add anything new. The invite link stays the same.`;
+}
+
+/** True when `handle` is the ring's creator (case-insensitive). */
+export function isCreator(campaign, handle) {
+  return sameHandle(campaign?.createdBy, handle);
+}
+
+/** True when `handle` appears in campaign.removedMembers. */
+export function isRemovedHandle(campaign, handle) {
+  if (typeof campaignModel.isRemoved === 'function') {
+    return !!campaignModel.isRemoved(campaign, handle);
+  }
+  return (campaign?.removedMembers || []).some((r) => sameHandle(r?.handle, handle));
+}
+
+/** Removed entries for the roster, in stored order. */
+export function removedRoster(campaign) {
+  return (campaign?.removedMembers || [])
+    .filter((r) => r && stripAt(r.handle))
+    .map((r) => ({ handle: r.handle, removedAt: r.removedAt, removedBy: r.removedBy }));
+}
+
+/** Remove button shows only for the creator, on other, non-removed members. */
+export function canRemoveMember(campaign, me, memberHandle) {
+  if (!me?.handle || !isCreator(campaign, me.handle)) return false;
+  if (sameHandle(me.handle, memberHandle)) return false;
+  return !isRemovedHandle(campaign, memberHandle);
+}
+
+/**
+ * Compose / add-post / contribute controls are hidden when the local
+ * handle has been removed. (A non-member also gets none, via the
+ * existing alreadyMember gate.)
+ */
+export function controlsHidden(campaign, me) {
+  return !!me?.handle && isRemovedHandle(campaign, me.handle);
+}
+
+/**
+ * Remove a member. Delegates to `campaignModel.removeMember`; otherwise a
+ * local fallback with the same semantics: creator-only, roster entry
+ * dropped, removedMembers appended (no duplicates; repeat updates
+ * removedAt), posts and assists kept as history. Returns a NEW campaign.
+ */
+export function removeMemberFromCampaign(campaign, handle, { by, now } = {}) {
+  if (typeof campaignModel.removeMember === 'function') {
+    return campaignModel.removeMember(campaign, handle, { by, now });
+  }
+  const next = clone(campaign);
+  if (!isCreator(next, by) || !stripAt(handle)) return next;
+  const stamp = now || new Date().toISOString();
+  next.members = (next.members || []).filter((m) => !sameHandle(m.handle, handle));
+  const removed = Array.isArray(next.removedMembers) ? next.removedMembers : [];
+  const idx = removed.findIndex((r) => sameHandle(r.handle, handle));
+  const entry = { handle: String(handle).trim(), removedAt: stamp, removedBy: String(by).trim() };
+  if (idx >= 0) removed[idx] = { ...removed[idx], removedAt: stamp };
+  else removed.push(entry);
+  next.removedMembers = removed;
+  return next;
+}
+
 function esc(s) {
   return String(s ?? '')
     .replace(/&/g, '&amp;')
@@ -306,6 +394,7 @@ function syncCampaignToStore(store, campaign, updated) {
   store.saveCampaigns(list);
   store.campaigns = list;
   campaign.members = updated.members;
+  if (updated.removedMembers) campaign.removedMembers = updated.removedMembers;
   if (updated.posts) campaign.posts = updated.posts;
   if (updated.anchorPost) campaign.anchorPost = updated.anchorPost;
 }
@@ -381,9 +470,12 @@ export function mount(rootEl, ctx) {
 
     const game = campaign.game || store.game || { name: 'Untitled game', links: {}, tags: [] };
     const me = store.me || {};
-    const alreadyMember = (campaign.members || []).some(
-      (m) => me.handle && handleKey(m.handle) === handleKey(me.handle),
-    );
+    const iAmRemoved = controlsHidden(campaign, me);
+    const alreadyMember =
+      !iAmRemoved &&
+      (campaign.members || []).some(
+        (m) => me.handle && handleKey(m.handle) === handleKey(me.handle),
+      );
     const posts = feedPosts(campaign);
     const quotable = newestQuotablePost(campaign);
     const baseUrl =
@@ -442,6 +534,8 @@ export function mount(rootEl, ctx) {
           <h3>${esc(campaign.title)}${campaign.demo ? ' <span class="demo-badge">DEMO</span>' : ''}</h3>
         </header>
 
+        ${iAmRemoved ? `<p class="ring-removed-notice">${esc(REMOVED_NOTICE)}</p>` : ''}
+
         ${
           alreadyMember
             ? `<section class="campaign-add-post">
@@ -482,13 +576,20 @@ export function mount(rootEl, ctx) {
         <section class="ring">
           <h3>The ring (${(campaign.members || []).length})</h3>
           ${
-            (campaign.members || []).length
+            (campaign.members || []).length || removedRoster(campaign).length
               ? `<ul class="ring-list">${(campaign.members || [])
                   .map(
                     (m) => `<li class="ring-member">
                       <span class="avatar avatar-h${avatarHue(m.handle)}">${esc(initials(m.name || m.handle))}</span>
                       <span class="member-name">${esc(m.name)}</span>
                       <span class="member-handle">${esc(m.handle)}</span>
+                      ${canRemoveMember(campaign, me, m.handle) ? `<button type="button" class="member-remove" data-remove-member="${esc(m.handle)}">Remove</button>` : ''}
+                    </li>`,
+                  )
+                  .join('')}${removedRoster(campaign)
+                  .map(
+                    (r) => `<li class="ring-member ring-member-removed">
+                      <span class="member-handle">${esc(atHandle(r.handle))} — removed</span>
                     </li>`,
                   )
                   .join('')}</ul>`
@@ -500,6 +601,8 @@ export function mount(rootEl, ctx) {
           ${
             alreadyMember
               ? '<p>You&rsquo;re in the ring.</p>'
+              : iAmRemoved
+              ? ''
               : `<h3>Join the ring</h3>
           <p>Local only — no server, no approval queue. Anyone with the link joins.</p>
           <form id="ring-join-form">
@@ -642,6 +745,26 @@ export function mount(rootEl, ctx) {
         }
         btn.disabled = true;
         btn.textContent = 'Passed on — noted.';
+      });
+    });
+
+    // Creator-only Remove: confirm step, then local state only (relay
+    // publish is V43b's seam — hook ctx.onMemberRemoved if provided).
+    rootEl.querySelectorAll('[data-remove-member]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const handle = btn.dataset.removeMember;
+        if (!canRemoveMember(campaign, me, handle)) return;
+        const ok =
+          typeof globalThis.confirm === 'function'
+            ? globalThis.confirm(removeConfirmCopy(handle))
+            : false;
+        if (!ok) return;
+        const updated = removeMemberFromCampaign(campaign, handle, { by: me.handle });
+        syncCampaignToStore(store, campaign, updated);
+        if (typeof ctx.onMemberRemoved === 'function') {
+          ctx.onMemberRemoved({ campaignId: campaign.id, handle });
+        }
+        render();
       });
     });
 
