@@ -2,7 +2,7 @@
 
 Scope: quote-post drafts with the original attached, similarity-gate warnings live.
 Files owned: `src/quote-composer.mjs`, `tests/v23-quote-composer.test.mjs`
-Status: open
+Status: claimed
 Branch: `task/V23-quote-composer`
 
 ## Frozen contract

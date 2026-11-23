@@ -2,7 +2,7 @@
 
 Scope: the two main views. Home = your game dashboard. Campaign page = whole ring + join.
 Files owned: `src/home.mjs`, `src/campaign-page.mjs`, `tests/v22-home.test.mjs`
-Status: open
+Status: claimed
 Branch: `task/V22-home-page`
 
 ## Frozen contract

@@ -458,6 +458,66 @@ export function buildRingBriefPayload({
   });
 }
 
+// --- v0.2: campaign announcement (V26) ---
+
+export const CAMPAIGN_DISCLOSURE =
+  "Disclosure: ring share — fellow indie devs amplifying a peer's game. Not paid promotion.";
+
+export const CAMPAIGN_JOIN_PLACEHOLDER = "Open the campaign link to join";
+
+/**
+ * Build a Discord webhook payload announcing a v0.2 campaign, shaped for
+ * buildPayload (via buildRingBriefPayload, whose behaviour is unchanged).
+ * Announces the game, the anchor post link, the window, and the join
+ * placeholder, with the disclosure line. The campaign link itself rides
+ * in the link the human shares — this payload carries the placeholder
+ * text, never a fabricated URL.
+ * @param {object} [campaign]
+ * @returns {{ content: string, embeds: Array<object> }}
+ */
+export function buildCampaignAnnouncement(campaign) {
+  const src = campaign && typeof campaign === "object" ? campaign : {};
+  const game = src.game && typeof src.game === "object" ? src.game : {};
+  const anchor =
+    src.anchorPost && typeof src.anchorPost === "object" ? src.anchorPost : {};
+  const members = Array.isArray(src.members) ? src.members : [];
+
+  const gameName = typeof game.name === "string" ? game.name : "";
+  const anchorUrl =
+    typeof anchor.url === "string" ? anchor.url : "";
+  const anchorAuthor =
+    typeof anchor.author === "string" ? anchor.author : "";
+  const windowText =
+    src.window != null && String(src.window).trim()
+      ? String(src.window)
+      : "open-ended";
+  const gameUrl =
+    (game.links && typeof game.links === "object"
+      ? game.links.steam || game.links.itch || game.links.x || ""
+      : "") || "";
+
+  const postedCount = members.filter((m) => m?.status === "posted").length;
+  const lines = [
+    gameName ? `New campaign: ${gameName}` : "New campaign",
+    anchorUrl
+      ? `Anchor post: ${anchorUrl}${anchorAuthor ? ` (by ${anchorAuthor})` : ""}`
+      : "Anchor post: (no link yet)",
+    `Window: ${windowText}`,
+    members.length > 0
+      ? `Ring: ${members.length} member${members.length === 1 ? "" : "s"} (${postedCount} posted)`
+      : "Ring: no members yet",
+    CAMPAIGN_JOIN_PLACEHOLDER,
+  ];
+
+  return buildRingBriefPayload({
+    gameTitle: gameName,
+    brief: lines.join("\n"),
+    gameUrl,
+    utmCampaign: typeof src.id === "string" ? src.id : "",
+    disclosure: CAMPAIGN_DISCLOSURE,
+  });
+}
+
 async function parseRetryAfter(res) {
   try {
     if (res && typeof res.json === "function") {

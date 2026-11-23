@@ -2,7 +2,7 @@
 
 Scope: fictional demo seed data (on by default on first load, clearly labeled, clearable) and the disclaimer/terms text.
 Files owned: `src/demo.mjs`, `src/terms.mjs`, `tests/v25-demo.test.mjs`
-Status: open
+Status: claimed
 Branch: `task/V25-demo-terms`
 
 ## Frozen contract

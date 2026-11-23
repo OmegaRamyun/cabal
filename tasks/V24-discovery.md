@@ -2,7 +2,7 @@
 
 Scope: browsable campaign list, tag-match similarity, popularity by member count, listing filters.
 Files owned: `src/discovery.mjs`, `data/campaigns.json`, `tests/v24-discovery.test.mjs`
-Status: open
+Status: claimed
 Branch: `task/V24-discovery`
 
 ## Frozen contract

@@ -2,7 +2,7 @@
 
 Scope: the campaign data model, URL link intent, and localStorage store.
 Files owned: `src/campaign.mjs`, `src/store.mjs`, `tests/v21-campaign.test.mjs`
-Status: open
+Status: claimed
 Branch: `task/V21-campaign-core`
 
 ## Frozen contract (do not change shape without coordinator approval)
