@@ -4,6 +4,8 @@
 // campaigns.atom at the repo root. Static file, no server, no build step
 // beyond re-running the generator when the list changes.
 
+import { normalizeCampaign, latestPost, latestActivity, postedCount, relativeTime } from './campaign.mjs';
+
 export const FEED_ID = 'tag:omegaramyun.github.io,2026:cabal-campaigns';
 export const FEED_TITLE = 'Cabal — discover campaigns';
 export const FEED_SUBTITLE =
@@ -23,6 +25,8 @@ export function escXml(s) {
 }
 
 function entryUpdated(campaign) {
+  const active = String(latestActivity(campaign) ?? '').trim();
+  if (active) return active;
   const created = String(campaign?.createdAt ?? '').trim();
   if (created) return created;
   const start = String(campaign?.window?.start ?? '').trim();
@@ -35,33 +39,46 @@ function gameLink(campaign) {
   return links.steam || links.itch || '';
 }
 
+const SNIPPET_MAX = 140;
+
+function snippetOf(text) {
+  const t = String(text ?? '').replace(/\s+/g, ' ').trim();
+  return t.length > SNIPPET_MAX ? `${t.slice(0, SNIPPET_MAX - 1).trimEnd()}…` : t;
+}
+
 /**
- * campaignToEntry(campaign, { linkFor }) -> Atom <entry> string.
- * linkFor(campaign) supplies the join URL (the #c= link intent).
+ * campaignToEntry(campaign, { linkFor, now }) -> Atom <entry> string.
+ * linkFor(campaign) supplies the join URL (the #c= link intent). The summary
+ * describes the LATEST post (platform, author, snippet, relative time vs
+ * `now`), not the anchor; <updated> is the ring's latest activity.
  * Demo campaigns are labeled as example data in the summary.
  */
-export function campaignToEntry(campaign, { linkFor } = {}) {
+export function campaignToEntry(campaign, { linkFor, now } = {}) {
+  campaign = normalizeCampaign(campaign) ?? {};
   const game = campaign?.game ?? {};
   const name = String(game.name ?? 'Untitled game');
   const tags = Array.isArray(game.tags) ? game.tags.filter(Boolean) : [];
   const members = Array.isArray(campaign.members) ? campaign.members : [];
-  const posted = members.filter((m) => m?.status === 'posted').length;
+  const contributed = postedCount(campaign);
   const title = String(campaign?.title ?? `${name} campaign`);
   const updated = entryUpdated(campaign);
   const id = `tag:omegaramyun.github.io,2026:${String(campaign?.id ?? 'unknown')}`;
   const join = typeof linkFor === 'function' ? linkFor(campaign) : '';
   const gamePage = gameLink(campaign);
-  const author = String(campaign?.anchorPost?.author ?? 'unknown');
-  const anchorText = String(campaign?.anchorPost?.text ?? '').trim();
-  const window = campaign?.window ?? {};
-  const windowText =
-    window.start && window.end ? ` Window ${window.start} to ${window.end}.` : '';
+  const latest = latestPost(campaign);
+  const author = String(latest?.author ?? campaign?.anchorPost?.author ?? 'unknown');
+  const snippet = snippetOf(latest?.text);
+  const when = latest ? relativeTime(latest.createdAt, now) : '';
+  const latestText = latest
+    ? `Latest post — ${String(latest.platform)} ${author}${snippet ? `: ${snippet}` : ''}${when ? ` (${when})` : ''}.`
+    : '';
   const demoNote = campaign?.demo
     ? ' Example campaign — fictional data.'
     : '';
-  const summary =
+  const summary = (
     `${name}${tags.length ? ` (${tags.join(', ')})` : ''} — ` +
-    `${anchorText} ${posted}/${members.length} posted.${windowText}${demoNote}`;
+    `${latestText} ${contributed}/${members.length} ringmates have contributed.${demoNote}`
+  ).replace(/\s{2,}/g, ' ');
 
   const lines = [
     '  <entry>',
@@ -85,14 +102,15 @@ export function campaignToEntry(campaign, { linkFor } = {}) {
  * epoch when the list is empty (deterministic; the generator passes the
  * list's own updated date only when there are no entries).
  */
-export function buildFeed(campaigns, { linkFor, updated } = {}) {
+export function buildFeed(campaigns, { linkFor, updated, now } = {}) {
   const list = (Array.isArray(campaigns) ? campaigns : [])
+    .map((c) => normalizeCampaign(c))
     .slice()
     .sort((a, b) => String(entryUpdated(b)).localeCompare(String(entryUpdated(a))));
   const feedUpdated =
     updated || (list.length ? entryUpdated(list[0]) : '1970-01-01T00:00:00Z');
   const entries = list
-    .map((c) => campaignToEntry(c, { linkFor }))
+    .map((c) => campaignToEntry(c, { linkFor, now }))
     .join('\n');
   return [
     '<?xml version="1.0" encoding="utf-8"?>',

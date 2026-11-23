@@ -171,7 +171,9 @@ test('createCampaign: frozen shape, id + createdAt, creator pending', () => {
   assert.ok(!Number.isNaN(Date.parse(c.createdAt)));
   assert.equal(c.title, 'Push');
   assert.equal(c.game.name, 'Test Game');
-  assert.deepEqual(c.members, [{ name: 'Dev', handle: '@dev', status: 'pending' }]);
+  assert.deepEqual(c.members, [{ name: 'Dev', handle: '@dev' }]);
+  assert.equal(c.posts.length, 1);
+  assert.equal(c.posts[0].url, 'https://x.com/d/1');
   assert.equal(c.window.start, '2026-11-23');
 });
 
@@ -193,7 +195,7 @@ test('addMember: appends pending, dedupes by handle, no mutation', () => {
   const c = campaign();
   const joined = addMember(c, { name: 'New', handle: '@new' });
   assert.equal(joined.members.length, 3);
-  assert.equal(joined.members[2].status, 'pending');
+  assert.equal(joined.members[2].status, undefined, 'v2 roster carries no status');
   assert.equal(c.members.length, 2); // original untouched
   // Dedupe returns a new object with the same content (V21: no mutation,
   // never the same reference).

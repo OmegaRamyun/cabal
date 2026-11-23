@@ -6,6 +6,8 @@
 // e.g. localStorage or V21's createMemoryStore); when omitted, localStorage
 // is used when available.
 
+import { normalizeCampaign } from "./campaign.mjs";
+
 export const DEMO_BADGE = "DEMO";
 
 export const DEMO_GAME_NAME = "Starlight Salvage";
@@ -73,8 +75,12 @@ function hoursAgo(base, hours) {
   return new Date(base.getTime() - hours * 3600 * 1000).toISOString();
 }
 
-function campaign(id, title, anchorPost, window, members, createdAt) {
-  return {
+// Built in the legacy anchor-only shape (member state inline), then migrated
+// to the v2 sustained-ring shape by normalizeCampaign: the anchor becomes
+// posts[0] and each "posted" member becomes an assist on it. Windows pass
+// through for decode compatibility; the UI never surfaces them as ring state.
+function campaign(id, title, anchorPost, window, members, createdAt, extraPosts = []) {
+  const v2 = normalizeCampaign({
     id,
     game: demoGame(),
     title,
@@ -83,11 +89,15 @@ function campaign(id, title, anchorPost, window, members, createdAt) {
     members,
     createdAt,
     demo: true,
-  };
+  });
+  v2.posts.push(...extraPosts);
+  return v2;
 }
 
 /**
- * demoCampaigns(now?) — exactly 3 fictional campaigns for Starlight Salvage.
+ * demoCampaigns(now?) — exactly 3 fictional campaigns for Starlight Salvage,
+ * all in the v2 sustained-ring shape (posts + assists; the Next Fest ring has
+ * a second post on Reddit so the demo shows a multi-post ring).
  * `now` defaults to the current time; pass a fixed Date in tests so the
  * live/upcoming windows are deterministic.
  *  1. LIVE "Launch week push" — window covers now, 4 members, 2 posted.
@@ -96,7 +106,6 @@ function campaign(id, title, anchorPost, window, members, createdAt) {
  */
 export function demoCampaigns(now = new Date()) {
   const base = now instanceof Date ? now : new Date(now);
-  const createdAt = base.toISOString();
   return [
     campaign(
       "cmp_demo_launch",
@@ -120,7 +129,7 @@ export function demoCampaigns(now = new Date()) {
         member("June", "@junebakes", "pending"),
         member("Rook", "@rookdev", "pending"),
       ],
-      createdAt,
+      hoursAgo(base, 72),
     ),
     campaign(
       "cmp_demo_demoday",
@@ -137,7 +146,7 @@ export function demoCampaigns(now = new Date()) {
         member("Fern", "@fernfolk", "pending"),
         member("Rook", "@rookdev", "pending"),
       ],
-      createdAt,
+      hoursAgo(base, 6),
     ),
     campaign(
       "cmp_demo_nextfest",
@@ -172,7 +181,27 @@ export function demoCampaigns(now = new Date()) {
         }),
         member("Fern", "@fernfolk", "pending"),
       ],
-      createdAt,
+      hoursAgo(base, 48),
+      [
+        {
+          id: "pst_demofest",
+          author: "Wren",
+          platform: "reddit",
+          url: "https://www.reddit.com/r/IndieGaming/comments/1demo001/starlight_salvage_next_fest_devlog/",
+          text: "Next Fest devlog: what we cut from the demo and why the magnet stayed.",
+          kind: "devlog",
+          createdAt: hoursAgo(base, 10),
+          assists: [
+            {
+              handle: "@pipdraws",
+              status: "contributed",
+              contributedAt: hoursAgo(base, 6),
+              url: "https://x.com/pipdraws/status/1000000000000000011",
+              note: "Upvoted. Shared it to #Ring.",
+            },
+          ],
+        },
+      ],
     ),
   ];
 }

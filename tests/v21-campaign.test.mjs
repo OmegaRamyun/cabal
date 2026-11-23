@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   createCampaign, validateCampaign, addMember, markPosted,
-  postedCount, pendingMembers, isLive, isUpcoming,
+  postedCount, markContributed, isLive, isUpcoming,
   encodeCampaignLink, decodeCampaignLink,
 } from "../src/campaign.mjs";
 import { createMemoryStore, createStore, KEYS } from "../src/store.mjs";
@@ -30,7 +30,10 @@ test("createCampaign: assigns cmp_ id + createdAt, creator is members[0] pending
   const c = make();
   assert.match(c.id, /^cmp_[a-z0-9]{8}$/);
   assert.ok(!Number.isNaN(Date.parse(c.createdAt)));
-  assert.deepEqual(c.members, [{ name: "Brass Dev", handle: "@brassdev", status: "pending" }]);
+  assert.deepEqual(c.members, [{ name: "Brass Dev", handle: "@brassdev" }]);
+  assert.equal(c.posts.length, 1);
+  assert.match(c.posts[0].id, /^pst_[a-z0-9]{8}$/);
+  assert.equal(c.anchorPost.url, c.posts[0].url);
   assert.equal(c.window.start, "2026-11-23");
   assert.deepEqual(validateCampaign(c), []);
 });
@@ -50,10 +53,15 @@ test("validateCampaign: each missing field is reported", () => {
     ["game.name (blank)", { ...good, game: { ...good.game, name: "   " } }],
     ["game.links (neither steam nor itch)", { ...good, game: { ...good.game, links: { x: "https://x.com/brass" } } }],
     ["game.links (empty)", { ...good, game: { ...good.game, links: {} } }],
-    ["anchorPost.url", { ...good, anchorPost: { ...good.anchorPost, url: "" } }],
-    ["anchorPost.text", { ...good, anchorPost: { ...good.anchorPost, text: "" } }],
-    ["anchorPost.author", { ...good, anchorPost: { ...good.anchorPost, author: "" } }],
-    ["anchorPost.platform", { ...good, anchorPost: { ...good.anchorPost, platform: "mastodon" } }],
+    ["posts[0].url", { ...good, posts: [{ ...good.posts[0], url: "" }] }],
+    ["posts[0].url (not http)", { ...good, posts: [{ ...good.posts[0], url: "ftp://x" }] }],
+    ["posts[0].author", { ...good, posts: [{ ...good.posts[0], author: "" }] }],
+    ["posts[0].platform", { ...good, posts: [{ ...good.posts[0], platform: "" }] }],
+    ["no posts and no anchorPost", { ...good, posts: [], anchorPost: undefined }],
+    ["legacy anchorPost.url", { ...good, posts: undefined, anchorPost: { ...good.anchorPost, url: "" } }],
+    ["legacy anchorPost.text", { ...good, posts: undefined, anchorPost: { ...good.anchorPost, text: "" } }],
+    ["legacy anchorPost.author", { ...good, posts: undefined, anchorPost: { ...good.anchorPost, author: "" } }],
+    ["legacy anchorPost.platform", { ...good, posts: undefined, anchorPost: { ...good.anchorPost, platform: "mastodon" } }],
     ["title", { ...good, title: "" }],
     ["members (empty)", { ...good, members: [] }],
     ["members (missing)", { ...good, members: undefined }],
@@ -79,31 +87,28 @@ test("addMember: appends pending, dedupes handle (case-insensitive), no mutation
   const withJo = addMember(c, { name: "Jo", handle: "@jo" });
   assert.equal(JSON.stringify(c), before, "original untouched");
   assert.equal(withJo.members.length, 2);
-  assert.equal(withJo.members[1].status, "pending");
+  assert.equal(withJo.members[1].status, undefined);
   const dup = addMember(withJo, { name: "Jo Again", handle: "@JO" });
   assert.equal(dup.members.length, 2);
   assert.equal(dup.members[1].name, "Jo");
   assert.notEqual(dup, withJo);
 });
 
-test("markPosted: flips status + records quoteUrl, unknown handle is a no-op copy", () => {
+test("markPosted (deprecated): contributes on posts[0], unknown handle is a no-op copy", () => {
   const c = addMember(make(), { name: "Jo", handle: "@jo" });
   const posted = markPosted(c, "@jo", "https://x.com/jo/status/9");
-  assert.equal(JSON.stringify(c.members[1].status), '"pending"');
-  assert.equal(posted.members[1].status, "posted");
-  assert.equal(posted.members[1].quoteUrl, "https://x.com/jo/status/9");
-  assert.equal(posted.members[0].status, "pending");
+  assert.equal(c.posts[0].assists.length, 0, "original untouched");
+  assert.equal(posted.posts[0].assists.length, 1);
+  assert.equal(posted.posts[0].assists[0].handle, "@jo");
+  assert.equal(posted.posts[0].assists[0].url, "https://x.com/jo/status/9");
   assert.equal(postedCount(posted), 1);
-  assert.deepEqual(pendingMembers(posted).map((m) => m.handle), ["@brassdev"]);
   const noop = markPosted(c, "@nobody");
   assert.deepEqual(noop, c);
   assert.notEqual(noop, c);
 });
 
-test("postedCount / pendingMembers on a fresh campaign", () => {
-  const c = make();
-  assert.equal(postedCount(c), 0);
-  assert.equal(pendingMembers(c).length, 1);
+test("postedCount on a fresh campaign is 0", () => {
+  assert.equal(postedCount(make()), 0);
 });
 
 test("isLive / isUpcoming: windowed and windowless", () => {

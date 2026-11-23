@@ -56,38 +56,38 @@ test('avatarHue: deterministic, in range, spread across the demo names', () => {
   assert.ok(hues.size >= 4, `spread ${[...hues]}`);
 });
 
-test('markPosted: stamps postedAt, unknown handle stays an unchanged copy', () => {
+test('markPosted (deprecated): stamps contributedAt on posts[0], unknown handle stays an unchanged copy', () => {
   const c = {
+    id: 'cmp_x', createdAt: '2026-11-20T00:00:00Z',
+    anchorPost: { platform: 'x', url: 'https://x.com/a/status/1', text: 'hi', author: '@a' },
     members: [
       { name: 'Jo', handle: '@jo', status: 'pending' },
       { name: 'Al', handle: '@al', status: 'pending' },
     ],
   };
   const posted = markPosted(c, '@jo', 'https://x.com/jo/status/9', NOW);
-  assert.equal(posted.members[0].status, 'posted');
-  assert.equal(posted.members[0].postedAt, '2026-11-22T12:00:00.000Z');
-  assert.equal(posted.members[0].quoteUrl, 'https://x.com/jo/status/9');
-  assert.equal(posted.members[1].status, 'pending');
-  assert.equal(posted.members[1].postedAt, undefined);
+  const assists = posted.posts[0].assists;
+  assert.equal(assists.length, 1);
+  assert.equal(assists[0].handle, '@jo');
+  assert.equal(assists[0].contributedAt, '2026-11-22T12:00:00.000Z');
+  assert.equal(assists[0].url, 'https://x.com/jo/status/9');
   assert.equal(c.members[0].postedAt, undefined, 'no mutation of the original');
   const noop = markPosted(c, '@nobody');
-  assert.deepEqual(noop, c);
+  assert.equal(noop.posts[0].assists.length, 0);
   assert.notEqual(noop, c);
 });
 
-test('demo: posted members carry postedAt + quoteText in their own words', () => {
+test('demo: contributors carry contributedAt + quoteText in their own words (assists on posts[0])', () => {
   const [live, , fest] = demoCampaigns(NOW);
-  const moss = live.members.find((m) => m.handle === '@mossplays');
-  assert.equal(moss.status, 'posted');
-  assert.equal(relativeTime(moss.postedAt, NOW), '2h');
+  const assistOf = (c, handle) => c.posts[0].assists.find((a) => a.handle === handle);
+  const moss = assistOf(live, '@mossplays');
+  assert.equal(relativeTime(moss.contributedAt, NOW), '2h');
   assert.match(moss.quoteText, /cozy/);
-  const pip = live.members.find((m) => m.handle === '@pipdraws');
-  assert.equal(relativeTime(pip.postedAt, NOW), '5h');
+  const pip = assistOf(live, '@pipdraws');
+  assert.equal(relativeTime(pip.contributedAt, NOW), '5h');
   assert.ok(pip.quoteText.length > 10);
-  const festMoss = fest.members.find((m) => m.handle === '@mossplays');
-  assert.equal(relativeTime(festMoss.postedAt, NOW), '1d');
-  const pending = live.members.find((m) => m.handle === '@junebakes');
-  assert.equal(pending.status, 'pending');
-  assert.equal(pending.postedAt, undefined);
-  assert.equal(pending.quoteText, undefined);
+  const festMoss = assistOf(fest, '@mossplays');
+  assert.equal(relativeTime(festMoss.contributedAt, NOW), '1d');
+  assert.equal(assistOf(live, '@junebakes'), undefined, 'June has not contributed');
+  assert.equal(live.members.find((m) => m.handle === '@junebakes').status, undefined);
 });

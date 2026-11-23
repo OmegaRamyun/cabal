@@ -26,8 +26,10 @@ function memoryStore(initial = {}) {
 }
 
 const NOW = new Date("2026-11-22T12:00:00.000Z");
-const posted = (c) => c.members.filter((m) => m.status === "posted");
-const pending = (c) => c.members.filter((m) => m.status === "pending");
+// v2: "posted" = roster members with an assist anywhere in the ring.
+const assisted = (c) => new Set(c.posts.flatMap((p) => p.assists.map((a) => a.handle)));
+const posted = (c) => c.members.filter((m) => assisted(c).has(m.handle));
+const pending = (c) => c.members.filter((m) => !assisted(c).has(m.handle));
 
 test("demoGame is the fictional Starlight Salvage", () => {
   const g = demoGame();
@@ -65,7 +67,7 @@ test("live campaign window covers now; upcoming starts tomorrow; 2 posted / 2 pe
   assert.equal(live.members.length, 4);
   assert.equal(posted(live).length, 2);
   assert.equal(pending(live).length, 2);
-  for (const m of posted(live)) assert.ok(m.quoteUrl, `${m.handle} posted without a quote URL`);
+  for (const a of live.posts[0].assists) assert.ok(a.url, `${a.handle} contributed without a quote URL`);
   assert.equal(upcoming.members.length, 3);
   assert.equal(posted(upcoming).length, 0);
 });
@@ -75,7 +77,7 @@ test("popular campaign has 6 members, 5 posted", () => {
   assert.equal(popular.members.length, 6);
   assert.equal(posted(popular).length, 5);
   assert.equal(pending(popular).length, 1);
-  for (const m of posted(popular)) assert.ok(m.quoteUrl, `${m.handle} posted without a quote URL`);
+  for (const a of popular.posts[0].assists) assert.ok(a.url, `${a.handle} contributed without a quote URL`);
 });
 
 test("demo content is fictional: no real games, people, or handles", () => {
