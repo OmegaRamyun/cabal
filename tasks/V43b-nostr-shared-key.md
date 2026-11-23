@@ -45,7 +45,7 @@ The roundabout: the keypair belongs to the **campaign**, never the user. It is g
 Kept from V41 (opt-in via "Use the suggested relays"; stored in `cabal.v2.relays`):
 - `wss://relay.damus.io`
 - `wss://nos.lol`
-- `wss://relay.nostr.band`
+- ~~`wss://relay.nostr.band`~~ — dropped in V47 (timed out live)
 
 These defaults were chosen from general knowledge and are **untested live** (no network in this lane). Click-test all three against real browsers before release; any may rate-limit or drop kind 30078. Only `wss://` is accepted (plain `ws://` allowed only for `localhost`/`127.0.0.1`).
 
