@@ -1,0 +1,1 @@
+{"version":1,"note":"Fictional example profiles only. Public, versioned, opt-in. Validated against ../schemas/directory.schema.json.","profiles":["example-roguelike.json","example-deckbuilder.json","example-farming-sim.json"]}
