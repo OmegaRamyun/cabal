@@ -424,17 +424,29 @@ export function mount(rootEl, ctx = {}) {
     section.appendChild(titleRow);
 
     if (prog.pagesTotal > 0) {
+      const pct = Math.round((prog.pagesRead / prog.pagesTotal) * 100);
       section.appendChild(
         el(doc, "p", `Primer: ${prog.pagesRead} of ${prog.pagesTotal} pages read`, "journal-primer")
       );
+      const meter = el(doc, "div", null, "ring-progress");
+      meter.setAttribute("aria-hidden", "true");
+      const fill = el(doc, "span", null, "ring-progress-fill");
+      fill.style.width = `${pct}%`;
+      meter.appendChild(fill);
+      section.appendChild(meter);
     }
 
     const list = el(doc, "ul", null, "journal-milestones");
     for (const m of MILESTONES) {
       const done = prog.milestones.includes(m.id);
       const li = el(doc, "li", null, done ? "milestone reached" : "milestone dim");
-      li.appendChild(el(doc, "span", m.label, "milestone-name"));
-      li.appendChild(el(doc, "span", " " + m.note, "milestone-note"));
+      const sigil = el(doc, "span", done ? "◆" : "◇", "milestone-sigil");
+      sigil.setAttribute("aria-hidden", "true");
+      const body = el(doc, "span", null, "milestone-body");
+      body.appendChild(el(doc, "span", m.label, "milestone-name"));
+      body.appendChild(el(doc, "span", " " + m.note, "milestone-note"));
+      li.appendChild(sigil);
+      li.appendChild(body);
       list.appendChild(li);
     }
     section.appendChild(list);

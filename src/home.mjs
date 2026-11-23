@@ -1,9 +1,9 @@
-// Cabal v0.2 — Home: your game dashboard (V22 / V39 sustained ring).
+// Cabal v0.2 — Home: your game dashboard (V22 / V39 sustained ring / V57 polish).
 //
 // First open asks one question ("What's your game?"), then the app becomes
-// that game's dashboard: live campaign (by latest activity, no window),
-// your turn (unassisted posts newest first across your rings), your rings,
-// start a campaign.
+// that game's dashboard: dismissible first-run primer card, compact one-line
+// activity strip, collapsible quiet "Your turn" status pill, dense clickable
+// My Rings list rows, and a shared .cabal-form for creating a ring.
 //
 // Mount contract: mount(rootEl, ctx) where
 //   ctx = { store, navigate(view, params), campaign? }
@@ -13,13 +13,24 @@
 
 import * as campaignModel from './campaign.mjs';
 import { generateCampaignKey } from './nostr.mjs';
+import { NAV_ICONS } from './nav.mjs';
 
 export const STORE_KEYS = {
   game: 'cabal.v2.game',
   campaigns: 'cabal.v2.campaigns',
   me: 'cabal.v2.me',
   demo: 'cabal.v2.demo',
+  primerDismissed: 'cabal.v2.primerDismissed',
 };
+
+export const HOME_COPY = Object.freeze({
+  ringsLede: 'Your dev rings, sorted by latest activity.',
+  primerTitle: 'New to Cabal?',
+  primerBody:
+    'Small rings of indie devs boost each other\u2019s posts in their own words — no accounts, no auto-posting.',
+  primerLink: 'Read the primer',
+  turnQuiet: 'Your turn \u00b7 All caught up',
+});
 
 const PLATFORM_LABELS = Object.freeze({
   x: 'X',
@@ -225,6 +236,64 @@ export function yourTurn(campaigns, me) {
   });
 }
 
+/**
+ * buildRingRow(campaign, { me, now }?) -> dense row view model for Home.
+ * Pure, tested.
+ */
+export function buildRingRow(campaign, { me = null, now = new Date() } = {}) {
+  const memberCount = (campaign?.members || []).length;
+  const memberLabel = memberCount === 1 ? '1 dev' : `${memberCount} devs`;
+  const activityIso = latestActivity(campaign);
+  const activity = activityIso ? relativeTime(activityIso, now) : '';
+  const unassisted = handleKey(me) ? unassistedPostsFor(campaign, handleKey(me)).length : 0;
+  let status = 'Active';
+  let statusKind = 'active';
+  if (unassisted > 0) {
+    status = `${unassisted} to assist`;
+    statusKind = 'turn';
+  } else if (!isLive(campaign, now)) {
+    status = 'Resting';
+    statusKind = 'quiet';
+  }
+  return {
+    id: campaign?.id || '',
+    title: campaign?.title || 'Untitled ring',
+    memberCount,
+    memberLabel,
+    activity,
+    activityTs: toTimestamp(activityIso),
+    status,
+    statusKind,
+    demo: Boolean(campaign?.demo),
+  };
+}
+
+/** Sort rings newest activity first (stable). Pure, tested. */
+export function sortRingsByActivity(campaigns) {
+  return [...(campaigns || [])]
+    .map((c, idx) => ({ c, idx, t: toTimestamp(latestActivity(c)) }))
+    .sort((a, b) => (b.t !== a.t ? b.t - a.t : a.idx - b.idx))
+    .map(({ c }) => c);
+}
+
+export function isPrimerDismissed(storage) {
+  try {
+    const s = storage || globalThis.localStorage;
+    return s ? s.getItem(STORE_KEYS.primerDismissed) === '1' : false;
+  } catch {
+    return false;
+  }
+}
+
+export function dismissPrimer(storage) {
+  try {
+    const s = storage || globalThis.localStorage;
+    if (s) s.setItem(STORE_KEYS.primerDismissed, '1');
+  } catch {
+    // ignore storage errors
+  }
+}
+
 // ------------------------------------------------------- localStorage ---
 
 /** Temporary fallback until store module is passed: read localStorage
@@ -277,7 +346,7 @@ function esc(s) {
 }
 
 function demoBadge(campaign) {
-  return campaign.demo ? ' <span class="demo-badge">DEMO</span>' : '';
+  return campaign.demo ? '<span class="demo-badge">DEMO</span>' : '';
 }
 
 function platformLabel(platform) {
@@ -288,44 +357,40 @@ function platformLabel(platform) {
 function gameLinksHtml(game) {
   const links = game.links || {};
   const out = [];
-  if (links.steam) out.push(`<a href="${esc(links.steam)}">Steam</a>`);
-  if (links.itch) out.push(`<a href="${esc(links.itch)}">itch.io</a>`);
-  if (links.x) out.push(`<a href="${esc(links.x)}">X</a>`);
-  return out.join(' · ');
+  if (links.steam) out.push(`<a class="platform-chip" href="${esc(links.steam)}" target="_blank" rel="noopener noreferrer">Steam</a>`);
+  if (links.itch) out.push(`<a class="platform-chip" href="${esc(links.itch)}" target="_blank" rel="noopener noreferrer">itch.io</a>`);
+  if (links.x) out.push(`<a class="platform-chip" href="${esc(links.x)}" target="_blank" rel="noopener noreferrer">X</a>`);
+  return out.join('');
 }
 
-function campaignCardHtml(campaign) {
-  const latest = latestPost(campaign) || campaign.anchorPost || {};
-  const author = latest.author || '';
-  const activity = relativeTime(latestActivity(campaign));
-  const memberCount = (campaign.members || []).length;
-  const ringLabel = memberCount === 1 ? '1 dev in ring' : `${memberCount} devs in ring`;
-  return `<article class="campaign-card" data-campaign-id="${esc(campaign.id)}">
-    <div class="post-head">
-      <span class="avatar avatar-h${avatarHue(author)}">${esc(initials(latest.authorName || author))}</span>
-      <span class="post-author">${esc(author)}</span>
-      ${latest.platform ? `<span class="post-time">· ${esc(platformLabel(latest.platform))}</span>` : ''}
-      ${activity ? `<span class="post-time">· Active ${esc(activity)}</span>` : ''}
+function ringRowHtml(campaign, me) {
+  const row = buildRingRow(campaign, { me });
+  return `<li class="ring-row" data-open-campaign="${esc(row.id)}" tabindex="0" role="link" aria-label="${esc(row.title)}">
+    <div class="ring-row-main">
+      <div class="ring-row-title-line">
+        <a class="ring-row-title" href="#/campaign/${encodeURIComponent(row.id)}" data-open-campaign="${esc(row.id)}">${esc(row.title)}</a>
+        ${row.demo ? '<span class="demo-badge">DEMO</span>' : ''}
+      </div>
+      <div class="ring-row-meta">${esc(row.memberLabel)}${row.activity ? ` &middot; Active ${esc(row.activity)}` : ''}</div>
     </div>
-    <h3><a href="#" data-open-campaign="${esc(campaign.id)}">${esc(campaign.title)}</a>${demoBadge(campaign)}</h3>
-    ${latest.text ? `<p class="anchor-preview">&ldquo;${esc(latest.text)}&rdquo;</p>` : ''}
-    <p class="campaign-meta">${esc(ringLabel)}${activity ? ` · Latest activity ${esc(activity)}` : ''}</p>
-  </article>`;
+    <span class="status-pill status-pill--${esc(row.statusKind)}">${esc(row.status)}</span>
+  </li>`;
 }
 
-function turnPostCardHtml({ campaign, post }) {
+function turnPostRowHtml({ campaign, post }) {
   const time = relativeTime(post.createdAt);
   const author = post.author || '';
-  return `<article class="campaign-card turn-post-card" data-campaign-id="${esc(campaign.id)}" data-post-id="${esc(post.id)}">
-    <div class="post-head">
-      <span class="avatar avatar-h${avatarHue(author)}">${esc(initials(post.authorName || author))}</span>
-      <span class="post-author">${esc(author)}</span>
-      <span class="post-time">· ${esc(platformLabel(post.platform))}${time ? ` · ${esc(time)}` : ''}</span>
+  return `<li class="ring-row turn-post-row" data-open-campaign="${esc(campaign.id)}" data-post-id="${esc(post.id)}" tabindex="0" role="link">
+    <span class="avatar avatar-h${avatarHue(author)}">${esc(initials(post.authorName || author))}</span>
+    <div class="ring-row-main">
+      <div class="ring-row-title-line">
+        <a class="ring-row-title" href="#/campaign/${encodeURIComponent(campaign.id)}" data-open-campaign="${esc(campaign.id)}">${esc(campaign.title)}</a>
+        ${demoBadge(campaign)}
+      </div>
+      <div class="ring-row-meta">${esc(author)} &middot; ${esc(platformLabel(post.platform))}${time ? ` &middot; ${esc(time)}` : ''}</div>
     </div>
-    <h3><a href="#" data-open-campaign="${esc(campaign.id)}">${esc(campaign.title)}</a>${demoBadge(campaign)}</h3>
-    ${post.text ? `<p class="anchor-preview">&ldquo;${esc(post.text)}&rdquo;</p>` : ''}
-    <p><button type="button" data-open-campaign="${esc(campaign.id)}">Open in ring feed</button></p>
-  </article>`;
+    <span class="status-pill status-pill--turn">Assist</span>
+  </li>`;
 }
 
 // V49: the Rings view's create action — what a ring is and what comes next.
@@ -356,27 +421,37 @@ export function mount(rootEl, ctx) {
 
   function renderSetup() {
     rootEl.innerHTML = `
-      <section class="home-setup">
-        <h2>What&rsquo;s your game?</h2>
-        <p>One question, then this becomes your game&rsquo;s dashboard. Next you can start a ring: pick one of your game&rsquo;s posts and invite other devs to amplify it in their own words.</p>
-        <form id="game-setup-form">
+      <section class="home-setup cabal-form-page">
+        <header class="cabal-page-header">
+          <div class="cabal-page-header-main">
+            <h2>What&rsquo;s your game?</h2>
+            <p class="view-lede">One quick setup, then this becomes your ring dashboard.</p>
+          </div>
+        </header>
+        <form id="game-setup-form" class="cabal-form">
           <p class="form-error" id="setup-errors" hidden></p>
           <label>Game name
             <input type="text" name="name" required autocomplete="off">
           </label>
-          <label>Steam link
-            <input type="url" name="steam" placeholder="https://store.steampowered.com/app/..." autocomplete="off">
-          </label>
-          <label>itch.io link
-            <input type="url" name="itch" placeholder="https://...itch.io/..." autocomplete="off">
-          </label>
-          <label>Tags (comma-separated)
-            <input type="text" name="tags" placeholder="roguelike, cozy, pixel-art" autocomplete="off">
-          </label>
-          <label>X handle
-            <input type="text" name="x" placeholder="@yourhandle" autocomplete="off">
-          </label>
-          <button type="submit">Save my game</button>
+          <div class="cabal-form-row">
+            <label>Steam link
+              <input type="url" name="steam" placeholder="https://store.steampowered.com/app/..." autocomplete="off">
+            </label>
+            <label>itch.io link
+              <input type="url" name="itch" placeholder="https://...itch.io/..." autocomplete="off">
+            </label>
+          </div>
+          <div class="cabal-form-row">
+            <label>Tags (comma-separated)
+              <input type="text" name="tags" placeholder="roguelike, cozy, pixel-art" autocomplete="off">
+            </label>
+            <label>X handle
+              <input type="text" name="x" placeholder="@yourhandle" autocomplete="off">
+            </label>
+          </div>
+          <div class="cabal-form-footer">
+            <button type="submit" class="primary btn-md">Save my game</button>
+          </div>
         </form>
       </section>`;
     const form = rootEl.querySelector('#game-setup-form');
@@ -419,80 +494,145 @@ export function mount(rootEl, ctx) {
     const campaigns = store.campaigns || [];
     const live = liveCampaign(campaigns);
     const turnPosts = yourTurnPosts(campaigns, store.me);
-    const rings = myCampaigns(campaigns, store.me);
+    const rings = sortRingsByActivity(myCampaigns(campaigns, store.me));
+    const showPrimer = !isPrimerDismissed();
+    const liveActivity = live ? relativeTime(latestActivity(live)) : '';
 
     rootEl.innerHTML = `
       <section class="home-dashboard">
-        <header class="game-header">
-          <h2>${esc(game.name)}</h2>
-          <p class="game-links">${gameLinksHtml(game)}</p>
-          ${game.tags && game.tags.length ? `<p class="game-tags">${game.tags.map(esc).join(', ')}</p>` : ''}
+        ${
+          showPrimer
+            ? `<aside class="primer-card" id="home-primer-card">
+                <div class="primer-card-body">
+                  <strong>${esc(HOME_COPY.primerTitle)}</strong>
+                  <span>${esc(HOME_COPY.primerBody)}</span>
+                  <a href="#/intro" class="primer-card-link">${esc(HOME_COPY.primerLink)}</a>
+                </div>
+                <button type="button" class="icon-btn btn-sm" id="dismiss-primer" aria-label="Dismiss primer">${NAV_ICONS.close}</button>
+              </aside>`
+            : ''
+        }
+        <header class="cabal-page-header game-header">
+          <div class="cabal-page-header-main">
+            <h2>${esc(game.name)}</h2>
+            <div class="game-meta-bar">
+              ${gameLinksHtml(game)}
+              ${game.tags && game.tags.length ? `<span class="game-tags">${game.tags.map(esc).join(' &middot; ')}</span>` : ''}
+            </div>
+          </div>
+          <div class="cabal-page-header-actions">
+            <button type="button" id="start-campaign" class="primary btn-md">${esc(START_RING.button)}</button>
+            <button type="button" class="info-btn btn-sm" popovertarget="start-ring-info" aria-label="What is a ring?">${NAV_ICONS.info}</button>
+            <div id="start-ring-info" popover class="cabal-popover">${esc(START_RING.help)}</div>
+          </div>
         </header>
-        <section class="start-ring">
-          <p><button type="button" id="start-campaign" class="primary">${esc(START_RING.button)}</button></p>
-          <p class="view-lede start-ring-help">${esc(START_RING.help)}</p>
-        </section>
-        <section class="live-campaign">
-          <h3>Latest activity</h3>
-          ${live ? campaignCardHtml(live) : '<p class="empty-state">No active ring yet. Start one and add your first post.</p>'}
-        </section>
-        <section class="your-turn">
-          <h3>Your turn</h3>
-          ${turnPosts.length ? turnPosts.map(turnPostCardHtml).join('') : '<p class="empty-state">No new posts to assist.</p>'}
-        </section>
+
+        ${
+          live
+            ? `<button type="button" class="activity-strip" data-open-campaign="${esc(live.id)}">
+                <span class="activity-strip-label">Latest</span>
+                <span class="activity-strip-title">${esc(live.title)}</span>
+                ${liveActivity ? `<span class="activity-strip-time">${esc(liveActivity)}</span>` : ''}
+              </button>`
+            : ''
+        }
+
+        <div class="turn-section">
+          ${
+            turnPosts.length
+              ? `<section class="your-turn">
+                  <h3 class="section-eyebrow">Your turn (${turnPosts.length})</h3>
+                  <ul class="ring-list-rows">${turnPosts.map(turnPostRowHtml).join('')}</ul>
+                </section>`
+              : `<div class="turn-status-row"><span class="status-pill status-pill--quiet">${esc(HOME_COPY.turnQuiet)}</span></div>`
+          }
+        </div>
+
         <section class="your-rings">
-          <h3>My Rings</h3>
-          <p class="view-lede">Your network: the devs who boost each other&rsquo;s posts over time. Looking for a format to run? See <a href="#/campaigns">Campaigns</a>.</p>
-          ${rings.length ? rings.map((c) => campaignCardHtml(c)).join('') : '<p class="empty-state">No rings yet.</p>'}
+          <div class="section-head-row">
+            <h3 class="section-eyebrow">My Rings</h3>
+            <a class="section-head-link" href="#/campaigns">Explore Network &rsaquo;</a>
+          </div>
+          <p class="view-lede">${esc(HOME_COPY.ringsLede)}</p>
+          ${
+            rings.length
+              ? `<ul class="ring-list-rows">${rings.map((c) => ringRowHtml(c, store.me)).join('')}</ul>`
+              : '<p class="empty-state">No rings yet. Start a ring to gather other devs around your game.</p>'
+          }
         </section>
       </section>`;
+
+    const dismissBtn = rootEl.querySelector('#dismiss-primer');
+    if (dismissBtn) {
+      dismissBtn.addEventListener('click', () => {
+        dismissPrimer();
+        const card = rootEl.querySelector('#home-primer-card');
+        if (card) card.remove();
+      });
+    }
 
     rootEl.querySelector('#start-campaign').addEventListener('click', () => {
       view = 'create';
       render();
     });
+
     rootEl.querySelectorAll('[data-open-campaign]').forEach((el) => {
-      el.addEventListener('click', (e) => {
+      const openIt = (e) => {
         e.preventDefault();
+        e.stopPropagation();
         navigate('campaign', { campaignId: el.dataset.openCampaign });
-      });
+      };
+      el.addEventListener('click', openIt);
+      if (el.tagName === 'LI') {
+        el.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') openIt(e);
+        });
+      }
     });
   }
 
   function renderCreate() {
     rootEl.innerHTML = `
-      <section class="campaign-create">
-        <h2>${esc(START_RING.button)}</h2>
-        <p>For <strong>${esc(store.game.name)}</strong>. Paste the link to one post about your game, then you get an invite link to send to other devs. No window, no deadline: add more posts as you build.</p>
-        ${ctx && ctx.formatId ? `<p class="format-preselected">Running the format: <strong>${esc(ctx.formatTagline || ctx.formatId)}</strong> &mdash; your ring&rsquo;s posts follow it in your own words.</p>` : ''}
-        <form id="campaign-create-form">
+      <section class="campaign-create cabal-form-page">
+        <header class="cabal-page-header">
+          <div class="cabal-page-header-main">
+            <h2>${esc(START_RING.button)}</h2>
+            <p class="view-lede">For <strong>${esc(store.game.name)}</strong> &mdash; paste a post link and invite other devs to boost it in their own words.</p>
+          </div>
+        </header>
+        ${ctx && ctx.formatId ? `<p class="format-preselected">Template: <strong>${esc(ctx.formatTagline || ctx.formatId)}</strong></p>` : ''}
+        <form id="campaign-create-form" class="cabal-form">
           <p class="form-error" id="create-errors" hidden></p>
           <label>Ring name
             <input type="text" name="title" required autocomplete="off" placeholder="e.g. Devlog &amp; launch ring">
           </label>
-          <label>Where is your post?
-            <select name="platform">
-              <option value="x">X</option>
-              <option value="bluesky">Bluesky</option>
-              <option value="reddit">Reddit</option>
-              <option value="instagram">Instagram</option>
-              <option value="tiktok">TikTok</option>
-              <option value="youtube">YouTube</option>
-              <option value="threads">Threads</option>
-              <option value="other">Other</option>
-            </select>
-          </label>
+          <div class="cabal-form-row">
+            <label>Where is your post?
+              <select name="platform">
+                <option value="x">X</option>
+                <option value="bluesky">Bluesky</option>
+                <option value="reddit">Reddit</option>
+                <option value="instagram">Instagram</option>
+                <option value="tiktok">TikTok</option>
+                <option value="youtube">YouTube</option>
+                <option value="threads">Threads</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label>Your handle on that post
+              <input type="text" name="author" required placeholder="@yourhandle" value="${esc(store.me?.handle || '')}" autocomplete="off">
+            </label>
+          </div>
           <label>Link to your post
             <input type="url" name="url" required placeholder="https://x.com/.../status/..." autocomplete="off">
           </label>
           <label>What the post says
-            <textarea name="text" required rows="3" placeholder="Paste the post text (required for X / Bluesky) or a line of context"></textarea>
+            <textarea name="text" required rows="2" placeholder="Paste the post text (required for X / Bluesky) or a line of context"></textarea>
           </label>
-          <label>Your handle on that post
-            <input type="text" name="author" required placeholder="@yourhandle" value="${esc(store.me?.handle || '')}" autocomplete="off">
-          </label>
-          <button type="submit" class="primary">Start my ring</button>
-          <button type="button" id="create-cancel">Cancel</button>
+          <div class="cabal-form-footer">
+            <button type="submit" class="primary btn-md">Start my ring</button>
+            <button type="button" id="create-cancel" class="btn-md">Cancel</button>
+          </div>
         </form>
       </section>`;
     rootEl.querySelector('#create-cancel').addEventListener('click', () => {
@@ -537,11 +677,6 @@ export function mount(rootEl, ctx) {
             };
       let campaign;
       try {
-        // V44: the campaign is born with its shared write key (V43b). The
-        // key belongs to the CAMPAIGN, never the user — the app holds it
-        // invisibly, the invite link carries it, no key management for
-        // the user. Demo/example rings (seeded elsewhere) have no key and
-        // are read-only on Nostr.
         campaign = createCampaign({
           game: store.game,
           title,
@@ -555,9 +690,6 @@ export function mount(rootEl, ctx) {
         errEl.hidden = false;
         return;
       }
-      // V48: createCampaign builds a fresh object and drops unknown
-      // fields, so a preselected format is set after creation.
-      // normalizeCampaign keeps it (clone-through) on every later load.
       if (ctx && ctx.formatId) campaign.formatId = ctx.formatId;
       const campaigns = [...(store.campaigns || []), campaign];
       store.saveCampaigns(campaigns);

@@ -38,7 +38,7 @@ export const INTRO_PAGES = [
       {
         heading: "Rings and Campaigns",
         paragraphs: [
-          "Two different things. Your Rings are your network: the small group of devs who boost each other over time. Campaigns are the formats that are catching on, the meme templates any ring can pick up and run in its own words.",
+          "Three clear pieces. Your Rings are your dev groups who boost each other over time. Templates are reusable post formats any ring can pick up and run in its own words. The Network is the live map of rings and templates.",
         ],
       },
       {

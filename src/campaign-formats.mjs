@@ -239,28 +239,39 @@ export function mount(rootEl, ctx = {}) {
     raw = ctx.formats.find((f) => lc(f?.id) === lc(ctx.formatId));
   }
   if (!raw) {
-    rootEl.appendChild(el(doc, "p", "That format was not found.", "empty-state"));
+    rootEl.appendChild(el(doc, "p", "That template was not found.", "empty-state"));
     return;
   }
   const f = normalizeFormat(raw);
   const rings = ringsRunningFormat(f.id, ctx.rings);
 
-  const head = el(doc, "h2", f.tagline, "format-tagline");
-  rootEl.appendChild(head);
-  if (f.demo) rootEl.appendChild(el(doc, "span", "DEMO", "demo-badge"));
+  const page = el(doc, "section", null, "template-detail");
+  const header = el(doc, "header", null, "cabal-page-header");
+  const headerMain = el(doc, "div", null, "cabal-page-header-main");
+  const titleRow = el(doc, "div", null, "ring-title-row");
+  titleRow.appendChild(el(doc, "h2", f.tagline, "format-tagline"));
+  if (f.demo) titleRow.appendChild(el(doc, "span", "DEMO", "demo-badge"));
+  headerMain.appendChild(titleRow);
+  if (f.description) headerMain.appendChild(el(doc, "p", f.description, "view-lede format-description"));
   const used = usageLabel(f.id, ctx.usage);
-  if (used) rootEl.appendChild(el(doc, "p", used, "format-usage"));
-  // V48: the honest-limits line travels with the usage count (V46).
+  if (used) headerMain.appendChild(el(doc, "p", used, "format-usage"));
   if (used && typeof ctx.usageNote === "string" && ctx.usageNote) {
-    rootEl.appendChild(el(doc, "p", ctx.usageNote, "format-usage-note"));
+    headerMain.appendChild(el(doc, "p", ctx.usageNote, "format-usage-note relay-status-chip"));
   }
-  if (f.description) rootEl.appendChild(el(doc, "p", f.description, "format-description"));
-  if (f.tags.length) rootEl.appendChild(el(doc, "p", f.tags.join(", "), "format-tags"));
+  if (f.tags.length) headerMain.appendChild(el(doc, "p", f.tags.join(" · "), "format-tags"));
+  header.appendChild(headerMain);
 
-  rootEl.appendChild(el(doc, "h3", "How to run it"));
-  rootEl.appendChild(el(doc, "p", f.howTo || "No guidance yet.", "format-howto"));
+  const actions = el(doc, "div", null, "cabal-page-header-actions");
+  const start = el(doc, "a", "Start a ring", "format-start primary btn-md");
+  start.href = typeof ctx.startHref === "string" ? ctx.startHref : "#/rings";
+  actions.appendChild(start);
+  header.appendChild(actions);
+  page.appendChild(header);
 
-  rootEl.appendChild(el(doc, "h3", "Example uses"));
+  page.appendChild(el(doc, "h3", "How to run it", "section-eyebrow"));
+  page.appendChild(el(doc, "p", f.howTo || "No guidance yet.", "format-howto"));
+
+  page.appendChild(el(doc, "h3", "Example uses", "section-eyebrow"));
   const exList = el(doc, "ul", null, "format-examples");
   const safe = f.examples.filter((e) => isHttpUrl(e.url));
   if (!safe.length) exList.appendChild(el(doc, "li", "No examples yet.", "empty-state"));
@@ -273,14 +284,14 @@ export function mount(rootEl, ctx = {}) {
     li.appendChild(a);
     exList.appendChild(li);
   }
-  rootEl.appendChild(exList);
+  page.appendChild(exList);
 
-  rootEl.appendChild(el(doc, "h3", "Rings running it"));
+  page.appendChild(el(doc, "h3", "Rings running this template", "section-eyebrow"));
   const ringList = el(doc, "ul", null, "format-rings");
-  if (!rings.length) ringList.appendChild(el(doc, "li", "No rings are running this format yet.", "empty-state"));
+  if (!rings.length) ringList.appendChild(el(doc, "li", "No rings are running this template yet.", "empty-state"));
   for (const r of rings) {
     const li = el(doc, "li");
-    const btn = el(doc, "button", r.title || r.id);
+    const btn = el(doc, "button", r.title || r.id, "btn-sm");
     btn.type = "button";
     btn.addEventListener("click", () => {
       if (typeof ctx.navigate === "function") ctx.navigate(r);
@@ -289,12 +300,8 @@ export function mount(rootEl, ctx = {}) {
     if (r.demo) li.appendChild(el(doc, "span", "DEMO", "demo-badge"));
     ringList.appendChild(li);
   }
-  rootEl.appendChild(ringList);
-
-  const start = el(doc, "a", "Start a ring");
-  start.href = typeof ctx.startHref === "string" ? ctx.startHref : "#/rings";
-  start.className = "format-start";
-  rootEl.appendChild(el(doc, "p", null)).appendChild(start);
+  page.appendChild(ringList);
+  rootEl.appendChild(page);
 }
 
 // ---- V49: create a template (pure core + mount) ----
@@ -302,8 +309,7 @@ export function mount(rootEl, ctx = {}) {
 export const CREATE_TEMPLATE_COPY = {
   heading: "New campaign template",
   lede:
-    "A template is a format, not a caption: the shape of a post and how to disclose it. " +
-    "When you save it, it appears in Campaigns and any ring can pick it up and run it in its own words.",
+    "A reusable post shape with disclosure guidance — any ring on the Network can pick it up in their own words.",
   submit: "Save template",
   cancel: "Cancel",
 };
@@ -358,50 +364,61 @@ export function mountCreate(rootEl, ctx = {}) {
   const doc = rootEl.ownerDocument;
   rootEl.textContent = "";
   const C = CREATE_TEMPLATE_COPY;
-  rootEl.appendChild(el(doc, "h2", C.heading));
-  rootEl.appendChild(el(doc, "p", C.lede, "view-lede"));
+  const page = el(doc, "section", null, "cabal-form-page");
+  const header = el(doc, "header", null, "cabal-page-header");
+  const headerMain = el(doc, "div", null, "cabal-page-header-main");
+  headerMain.appendChild(el(doc, "h2", C.heading));
+  headerMain.appendChild(el(doc, "p", C.lede, "view-lede"));
+  header.appendChild(headerMain);
+  page.appendChild(header);
 
-  const form = el(doc, "form", null, "format-create-form");
+  const form = el(doc, "form", null, "format-create-form cabal-form");
   const errBox = el(doc, "p", null, "form-error");
   errBox.hidden = true;
   form.appendChild(errBox);
 
   const inputs = {};
   const fieldErr = {};
-  const field = (name, label, kind, hint, placeholder) => {
+  const field = (name, label, kind, hint, placeholder, parent = form) => {
+    const group = el(doc, "div", null, "cabal-field");
     const wrap = el(doc, "label", label);
     const input = el(doc, kind === "text" ? "input" : "textarea");
     input.name = name;
     if (kind === "text") input.type = "text";
-    else input.rows = kind === "long" ? 5 : 3;
+    else input.rows = 2;
     input.value = "";
     input.placeholder = placeholder;
     input.required = name !== "tags";
     wrap.appendChild(input);
-    form.appendChild(wrap);
-    if (hint) form.appendChild(el(doc, "p", hint, "field-hint"));
+    group.appendChild(wrap);
+    if (hint) group.appendChild(el(doc, "p", hint, "field-hint"));
     const fe = el(doc, "p", null, "form-error field-error");
     fe.hidden = true;
-    form.appendChild(fe);
+    group.appendChild(fe);
+    parent.appendChild(group);
     inputs[name] = input;
     fieldErr[name] = fe;
   };
-  field("tagline", "Template name", "text", null, "e.g. Weekly devlog, one clip");
+  const topRow = el(doc, "div", null, "cabal-form-row");
+  field("tagline", "Template name", "text", null, "e.g. Weekly devlog, one clip", topRow);
+  field("tags", "Tags (optional)", "text", null, "devlog, clips", topRow);
+  form.appendChild(topRow);
   field("description", "What is it?", "short", "One or two sentences.", "e.g. Each ringmate shares one short clip of their game from the week.");
   field("howTo", "How a ring runs it", "long",
-    "Structure and disclosure only. No ready-to-paste captions: ringmates write their own words.",
+    "Structure and disclosure only — no ready-to-paste captions.",
     "e.g. Post one clip, say what changed this week, and add a disclosure line that you are in a ring.");
-  field("tags", "Tags (optional, comma-separated)", "text", null, "devlog, clips");
 
-  const submit = el(doc, "button", C.submit, "primary");
+  const footer = el(doc, "div", null, "cabal-form-footer");
+  const submit = el(doc, "button", C.submit, "primary btn-md");
   submit.type = "submit";
-  form.appendChild(submit);
+  footer.appendChild(submit);
   if (typeof ctx.onCancel === "function") {
-    const cancel = el(doc, "button", C.cancel);
+    const cancel = el(doc, "button", C.cancel, "btn-md");
     cancel.type = "button";
     cancel.addEventListener("click", () => ctx.onCancel());
-    form.appendChild(cancel);
+    footer.appendChild(cancel);
   }
+  form.appendChild(footer);
 
   form.addEventListener("submit", (e) => {
     if (e && typeof e.preventDefault === "function") e.preventDefault();
@@ -429,5 +446,6 @@ export function mountCreate(rootEl, ctx = {}) {
     }
     if (typeof ctx.onCreated === "function") ctx.onCreated(result.format);
   });
-  rootEl.appendChild(form);
+  page.appendChild(form);
+  rootEl.appendChild(page);
 }

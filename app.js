@@ -38,6 +38,7 @@ import * as userFormats from './src/user-formats.mjs';
 import * as popularity from './src/popularity.mjs';
 import * as graph from './src/graph.mjs';
 import * as nodeView from './src/node-view.mjs';
+import * as navChrome from './src/nav.mjs';
 import { mergeSyncedIntoStore } from './src/sync-target.mjs';
 
 const backend = createStore();
@@ -158,19 +159,21 @@ export function parseHash(hash = '') {
   return { view: 'home' };
 }
 
+let lastSection = 'home';
+let chrome = null;
+
 /**
- * navItemForView(view) -> 'home' | 'discover' | 'tools' — which top-bar
- * item is current for a route. Campaign, composer, intro and link-intent
- * land on Home; Terms lives under the Tools gear menu. Pure, tested.
+ * navItemForView(view, opts?) -> 'home' | 'discover' | 'tools' — which tab
+ * is current for a route. Campaign/composer routes honor opts.fromSection
+ * so rings opened from Network/Campaigns light the Network tab; defaults to
+ * 'home' when omitted. Pure, tested.
  */
-export function navItemForView(view = '') {
-  if (view === 'discover' || view === 'campaigns' || view === 'campaigns-new' || view === 'format') return 'discover';
-  if (view === 'tools' || view === 'terms') return 'tools';
-  return 'home';
+export function navItemForView(view = '', opts = {}) {
+  return navChrome.navItemForRoute(view, opts);
 }
 
-function syncNav(view) {
-  const current = navItemForView(view);
+function syncNav(view, opts = {}) {
+  const current = navItemForView(view, opts);
   document.querySelectorAll('[data-nav]').forEach((el) => {
     if (el.dataset.nav === current) el.setAttribute('aria-current', 'page');
     else el.removeAttribute('aria-current');
@@ -267,11 +270,21 @@ function renderSyncPanel(campaign) {
   const slot = document.querySelector('#campaign-extras');
   if (!slot) return;
   slot.textContent = '';
+  slot.hidden = true;
   if (!campaign) return;
   const campaignId = campaign.id;
   const original = JSON.parse(JSON.stringify(campaign));
   const view = document.querySelector('#view');
-  nostr.mount(slot, {
+  const details = document.createElement('details');
+  details.className = 'ring-sync-sheet';
+  const summary = document.createElement('summary');
+  summary.className = 'ring-sync-summary';
+  summary.innerHTML = '<span>Relay sync settings (Nostr)</span><span class="relay-status-chip">Advanced</span>';
+  const body = document.createElement('div');
+  body.className = 'ring-sync-body';
+  details.append(summary, body);
+  slot.appendChild(details);
+  nostr.mount(body, {
     campaign,
     getCampaigns: () => store.campaigns,
     me: store.me,
@@ -290,11 +303,16 @@ function renderCampaign(view, id, opts = {}) {
       renderNotFound(view, id);
       return;
     }
+    chrome?.update({ view: 'campaign', campaignId: id }, { fromSection: lastSection, title: campaign.title });
     view.textContent = '';
     campaignPage.mount(view, {
       store,
       navigate,
       campaign,
+      onTabChange: (tab) => {
+        const extras = document.querySelector('#campaign-extras');
+        if (extras) extras.hidden = tab !== 'sync';
+      },
       onPassOn: ({ campaignId, postId }) => {
         gamify.record('passon', { campaignId, postId });
       },
@@ -516,9 +534,10 @@ async function renderFormat(view, formatId) {
   );
   view.textContent = '';
   if (!format) {
-    view.innerHTML = `<section><h2>Format not found</h2><p>No campaign format with id ${esc(formatId)} here. <a href="#/campaigns">Back to Campaigns</a>.</p></section>`;
+    view.innerHTML = `<section><h2>Template not found</h2><p>No template with id ${esc(formatId)} here. <a href="#/campaigns">Back to Network</a>.</p></section>`;
     return;
   }
+  chrome?.update({ view: 'format', formatId: format.id }, { fromSection: lastSection, title: format.tagline });
   const statics = await loadStaticCampaigns();
   const rings = discovery.mergeLists(statics, store.campaigns);
   const mountIt = (usage) => {
@@ -604,13 +623,6 @@ function renderHomeExtras(view) {
   // V48: #/rings IS the home dashboard under its own route, so it gets
   // the primer link + field journal exactly like #/ does.
   if (view !== 'home' && view !== 'rings') return;
-  const explainer = document.createElement('p');
-  explainer.className = 'explainer';
-  const link = document.createElement('a');
-  link.href = '#/intro';
-  link.textContent = 'What Cabal is';
-  explainer.append('New here? Read ', link, ' — the primer, three short pages.');
-  slot.appendChild(explainer);
   const journalSlot = document.createElement('div');
   slot.appendChild(journalSlot);
   gamify.mount(journalSlot, {
@@ -621,14 +633,20 @@ function renderHomeExtras(view) {
 
 function renderTools(view) {
   view.textContent = '';
+  const header = document.createElement('header');
+  header.className = 'cabal-page-header';
+  const mainHead = document.createElement('div');
+  mainHead.className = 'cabal-page-header-main';
   const heading = document.createElement('h2');
-  heading.textContent = 'Campaign tools';
-  view.appendChild(heading);
+  heading.textContent = 'Ring tools';
+  mainHead.appendChild(heading);
   const explainer = document.createElement('p');
-  explainer.className = 'explainer';
+  explainer.className = 'view-lede';
   explainer.textContent =
-    'Helpers for a launch campaign. They serve a campaign — they are not the app.';
-  view.appendChild(explainer);
+    'Optional helpers for your game\u2019s launch rings.';
+  mainHead.appendChild(explainer);
+  header.appendChild(mainHead);
+  view.appendChild(header);
 
   const live = home.liveCampaign(store.campaigns);
   if (live) {
@@ -661,6 +679,12 @@ function renderTools(view) {
     view.appendChild(section);
     mod.mount(mountEl);
   }
+
+  const termsSec = document.createElement('section');
+  termsSec.className = 'tools-disclaimer';
+  termsSec.innerHTML =
+    '<h3 class="section-eyebrow">Terms &amp; disclaimer</h3><p class="view-lede">Cabal is for promoting your own games. A disclaimer states the terms; it is not a shield. <a href="#/terms">Read the full terms</a> &middot; <a href="#/intro">What Cabal is</a>.</p>';
+  view.appendChild(termsSec);
 }
 
 function renderTerms(view) {
@@ -671,13 +695,21 @@ function renderTerms(view) {
 async function route() {
   const view = document.querySelector('#view');
   if (!view) return;
+  if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+    window.scrollTo(0, 0);
+  }
   const parsed = parseHash(window.location.hash);
-  syncNav(parsed.view);
+  lastSection = navChrome.sectionForRoute(parsed.view, lastSection);
+  syncNav(parsed.view, { fromSection: lastSection });
+  chrome?.update(parsed, { fromSection: lastSection });
   renderHomeExtras(parsed.view);
   // The sync panel slot is re-mounted by renderCampaign when applicable;
   // clear it here so a stale panel never survives a route change.
   const extras = document.querySelector('#campaign-extras');
-  if (extras) extras.textContent = '';
+  if (extras) {
+    extras.textContent = '';
+    extras.hidden = true;
+  }
   if (parsed.view === 'link') {
     // Short Nostr link first (#c=<naddr>[&k=<key>]): fetch the campaign
     // from the relays (V44, spec §14). The key rides in the fragment only
@@ -780,6 +812,7 @@ function renderDemoBanner() {
 function start() {
   demo.seedDemo(globalThis.localStorage);
   renderDemoBanner();
+  chrome = navChrome.mountChrome(document);
   wireToolsMenu();
   // Shadow Cabal backdrop (V34): fixed canvas + scrim behind the app.
   // Mounted once, before the first route; forced dark (see index.html)

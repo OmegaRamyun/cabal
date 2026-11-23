@@ -1,22 +1,18 @@
-// Cabal v0.2 — Campaign page: sustained-ring feed (V22 / V39).
+// Cabal v0.2 — Ring page: sustained-ring feed with Feed / Members / Sync tabs (V22 / V39 / V57).
 //
-// The campaign page is a feed of posts (newest first) with contribution
-// comments (Enscryptions) underneath each post. The founding post is
-// posts[0] — the first feed card, not a special shrine.
-// Two-tier assist controls:
-//   - X / Bluesky posts: inline quote-post composer with similarity gate.
-//   - All other platforms: generic "I contributed" control + optional
-//     share URL + one-line Enscryption ("What did you do?").
-// No separate receipts list, no ledger view, no assist counts, no window.
+// Detail header: ring title, game subtitle, member avatar stack, and share
+// icon-button (copies link + toast). Feed / Members / Sync are tabs so
+// protocol plumbing stays tucked inside the Sync tab's collapsed sheet.
 //
 // Mount contract: mount(rootEl, ctx) where
-//   ctx = { store, navigate(view, params), campaign }
+//   ctx = { store, navigate(view, params), campaign, onTabChange? }
 //   store = { game, campaigns, me, saveGame, saveCampaigns, saveMe }
 
 import * as campaignModel from './campaign.mjs';
 import { ringSummary, resolveStore } from './home.mjs';
 import * as quoteComposer from './quote-composer.mjs';
 import * as nostrModel from './nostr.mjs';
+import { NAV_ICONS, showToast } from './nav.mjs';
 
 export const { addMember, postedCount } = campaignModel;
 export { ringSummary };
@@ -24,6 +20,8 @@ export { ringSummary };
 const { encodeCampaignLink, relativeTime, initials, avatarHue } = campaignModel;
 
 export const ENSCRYPTION_MAX_LENGTH = 280;
+
+export const RING_TABS = Object.freeze(['feed', 'members', 'sync']);
 
 export const PLATFORM_OPTIONS = Object.freeze([
   'x',
@@ -78,10 +76,38 @@ function randomPostId() {
   return `pst_${s}`;
 }
 
+/** Normalize a ring tab name to 'feed' | 'members' | 'sync'. Pure, tested. */
+export function normalizeRingTab(tab) {
+  return RING_TABS.includes(tab) ? tab : 'feed';
+}
+
+/**
+ * memberStackSummary(members, maxVisible?) -> { visible, overflow, total }
+ * Pure helper for the ring detail header's overlapping avatar stack.
+ */
+export function memberStackSummary(members = [], maxVisible = 4) {
+  const list = Array.isArray(members) ? members : [];
+  const cap = Math.max(1, Number(maxVisible) || 4);
+  return {
+    visible: list.slice(0, cap),
+    overflow: Math.max(0, list.length - cap),
+    total: list.length,
+  };
+}
+
 /** Human display label for a platform key. */
 export function platformLabel(platform) {
   const key = String(platform ?? '').trim().toLowerCase();
   return PLATFORM_LABELS[key] || 'Other';
+}
+
+/** Second-line post metadata string (platform · kind · time). Pure, tested. */
+export function postMetaLine(post, now = new Date()) {
+  const parts = [platformLabel(post?.platform)];
+  if (post?.kind && post.kind !== 'other') parts.push(post.kind);
+  const time = post?.createdAt ? relativeTime(post.createdAt, now) : '';
+  if (time) parts.push(time);
+  return parts.join(' \u00b7 ');
 }
 
 /** Clamp and trim an Enscryption note to max 280 chars. */
@@ -183,13 +209,8 @@ export function hasQuotablePost(campaign) {
 
 /**
  * shareLinkFor(campaign, baseUrl, relays = []) -> { url, note, noteClass }.
- * V44 (spec §14): once the ring has been published to relays
- * (campaign.nostr.createdAt set) AND the app holds its campaign key, the
- * share link is the short Nostr pointer (#c=<naddr>[&k=<key>]) — the invite
- * link stays stable and short. Before the first publish, the share link is
- * the whole-payload link (encodeCampaignLink): it also works offline, and
- * it is the fallback when relays are unreachable. Never throws — any
- * failure falls back to the payload link. Pure; tested.
+ * V44 contract preserved for unit tests; UI renders the note as a plain
+ * muted note (.ring-share-note) instead of a bold red error.
  */
 export function shareLinkFor(campaign, baseUrl = '', relays = []) {
   const payload = encodeCampaignLink(campaign, baseUrl);
@@ -207,9 +228,7 @@ export function shareLinkFor(campaign, baseUrl = '', relays = []) {
 }
 
 /**
- * Passive URL recognition (spec section 4). Delegates to V38
- * `campaignModel.parsePostUrl` when available; otherwise parses
- * locally from the URL string alone (never fetches, never throws).
+ * Passive URL recognition (spec section 4).
  */
 export function parsePostUrl(url) {
   if (typeof campaignModel.parsePostUrl === 'function') {
@@ -246,11 +265,7 @@ export function parsePostUrl(url) {
   }
 }
 
-/**
- * Append a post to a campaign (spec section 3b). Delegates to V38
- * `campaignModel.addPost` when available; otherwise returns a new
- * campaign with the validated post appended.
- */
+/** Append a post to a campaign (spec section 3b). */
 export function addPostToCampaign(campaign, postInput) {
   if (typeof campaignModel.addPost === 'function') {
     return campaignModel.addPost(campaign, postInput);
@@ -276,11 +291,7 @@ export function addPostToCampaign(campaign, postInput) {
   return next;
 }
 
-/**
- * Record/upsert an assist on a post (spec section 3b). Delegates to V38
- * `campaignModel.markContributed` when available; otherwise returns a new
- * campaign with the assist upserted by handle (case-insensitive).
- */
+/** Record/upsert an assist on a post (spec section 3b). */
 export function markPostContributed(campaign, postId, handle, details = {}) {
   if (typeof campaignModel.markContributed === 'function') {
     return campaignModel.markContributed(campaign, postId, handle, details);
@@ -314,14 +325,7 @@ export function markPostContributed(campaign, postId, handle, details = {}) {
   return matched ? next : clone(campaign);
 }
 
-// ----------------------------------------------------------------- DOM ---
-
 // ------------------------------------------------- creator removal (V43c) ---
-// Spec section 17b/17d. Model shapes: campaign.createdBy (handle),
-// campaign.removedMembers: [{ handle, removedAt, removedBy }].
-// Delegates to campaignModel.removeMember / isRemoved when V43a lands;
-// local fallbacks match the spec shapes. UI updates local state only —
-// publishing the removal to the relay is V43b's job.
 
 export const REMOVED_NOTICE = 'You were removed from this ring. You can still read it.';
 
@@ -372,21 +376,12 @@ export function canRemoveMember(campaign, me, memberHandle) {
   return !isRemovedHandle(campaign, memberHandle);
 }
 
-/**
- * Compose / add-post / contribute controls are hidden when the local
- * handle has been removed. (A non-member also gets none, via the
- * existing alreadyMember gate.)
- */
+/** Compose / add-post / contribute controls are hidden when removed. */
 export function controlsHidden(campaign, me) {
   return !!me?.handle && isRemovedHandle(campaign, me.handle);
 }
 
-/**
- * Remove a member. Delegates to `campaignModel.removeMember`; otherwise a
- * local fallback with the same semantics: creator-only, roster entry
- * dropped, removedMembers appended (no duplicates; repeat updates
- * removedAt), posts and assists kept as history. Returns a NEW campaign.
- */
+/** Remove a member (creator-only). Returns a NEW campaign. */
 export function removeMemberFromCampaign(campaign, handle, { by, now } = {}) {
   if (typeof campaignModel.removeMember === 'function') {
     return campaignModel.removeMember(campaign, handle, { by, now });
@@ -403,6 +398,8 @@ export function removeMemberFromCampaign(campaign, handle, { by, now } = {}) {
   next.removedMembers = removed;
   return next;
 }
+
+// ----------------------------------------------------------------- DOM ---
 
 function esc(s) {
   return String(s ?? '')
@@ -438,7 +435,7 @@ function renderCommentsHtml(post) {
         ? `<span class="comment-author">${esc(a.handle)}</span>: <span class="comment-text">${esc(receipt)}</span>`
         : `<span class="comment-author">${esc(a.handle)}</span> <span class="comment-text">Contributed</span>`;
       const link = hasUrl
-        ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">${esc(linkLabel)}</a>`
+        ? ` &middot; <a href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">${esc(linkLabel)}</a>`
         : '';
       const stamp = time ? ` <span class="member-time">${esc(time)}</span>` : '';
       return `<li class="post-comment">${body}${link}${stamp}</li>`;
@@ -455,29 +452,57 @@ function renderPostActionHtml(post, alreadyMember, me) {
     const linkLabel = assistLinkLabel(post.platform);
     return `<p class="post-my-status">Contributed${
       hasUrl
-        ? ` · <a href="${esc(mine.url)}" target="_blank" rel="noopener noreferrer">${esc(linkLabel)}</a>`
+        ? ` &middot; <a href="${esc(mine.url)}" target="_blank" rel="noopener noreferrer">${esc(linkLabel)}</a>`
         : ''
     }</p>`;
   }
   if (quoteComposer.isComposerPlatform(post.platform)) {
     return `<div class="post-composer" data-composer-post="${esc(post.id)}"></div>`;
   }
-  return `<form class="post-contribute-form" data-contribute-post="${esc(post.id)}">
+  return `<form class="post-contribute-form cabal-form" data-contribute-post="${esc(post.id)}">
     <label>What did you do?
       <input type="text" name="note" maxlength="${ENSCRYPTION_MAX_LENGTH}" placeholder="e.g. Upvoted, left a comment, shared to #Ring" autocomplete="off">
     </label>
     <label>Share link (optional)
       <input type="text" name="url" placeholder="https://..." autocomplete="off">
     </label>
-    <button type="submit" class="primary">I contributed</button>
+    <div class="cabal-form-footer">
+      <button type="submit" class="primary btn-sm">I contributed</button>
+    </div>
   </form>`;
+}
+
+async function copyShareUrl(url, doc) {
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(url);
+      showToast('Invite link copied', { doc });
+      return true;
+    }
+  } catch { /* fallback below */ }
+  try {
+    const tmp = doc.createElement('textarea');
+    tmp.value = url;
+    tmp.setAttribute('readonly', '');
+    tmp.style.position = 'fixed';
+    tmp.style.opacity = '0';
+    doc.body.appendChild(tmp);
+    tmp.select();
+    doc.execCommand('copy');
+    tmp.remove();
+    showToast('Invite link copied', { doc });
+    return true;
+  } catch {
+    showToast('Could not copy link — open Show raw link to copy manually', { doc });
+    return false;
+  }
 }
 
 export function mount(rootEl, ctx) {
   const store = resolveStore(ctx);
   const campaign = ctx && ctx.campaign;
-  const navigate = (ctx && ctx.navigate) || (() => {});
   let mountedComposers = [];
+  let activeTab = normalizeRingTab(ctx?.initialTab);
 
   function teardownComposers() {
     for (const h of mountedComposers) {
@@ -486,11 +511,25 @@ export function mount(rootEl, ctx) {
     mountedComposers = [];
   }
 
+  function applyTab(tab) {
+    activeTab = normalizeRingTab(tab);
+    rootEl.querySelectorAll('[data-ring-tab]').forEach((btn) => {
+      const selected = btn.dataset.ringTab === activeTab;
+      btn.setAttribute('aria-selected', String(selected));
+    });
+    rootEl.querySelectorAll('[data-ring-panel]').forEach((panel) => {
+      panel.hidden = panel.dataset.ringPanel !== activeTab;
+    });
+    if (typeof ctx?.onTabChange === 'function') {
+      ctx.onTabChange(activeTab);
+    }
+  }
+
   function render() {
     teardownComposers();
     if (!campaign) {
       rootEl.innerHTML =
-        '<section class="campaign-page"><p>No campaign here — open one from a link or from home.</p></section>';
+        '<section class="campaign-page"><p class="empty-state">No ring here — open one from a link or from Home.</p></section>';
       return;
     }
 
@@ -506,42 +545,58 @@ export function mount(rootEl, ctx) {
     const quotable = newestQuotablePost(campaign);
     const baseUrl =
       typeof window !== 'undefined' ? window.location.href.split('#')[0] : '';
-    const share = shareLinkFor(campaign, baseUrl, nostrModel.loadRelays().relays);
+    const relayConfig = nostrModel.loadRelays();
+    const share = shareLinkFor(campaign, baseUrl, relayConfig.relays);
+    const stack = memberStackSummary(campaign.members || [], 4);
 
     const links = game.links || {};
     const gameLinks = [
-      links.steam ? `<a href="${esc(links.steam)}">Steam</a>` : '',
-      links.itch ? `<a href="${esc(links.itch)}">itch.io</a>` : '',
-      links.x ? `<a href="${esc(links.x)}">X</a>` : '',
+      links.steam ? `<a class="platform-chip" href="${esc(links.steam)}" target="_blank" rel="noopener noreferrer">Steam</a>` : '',
+      links.itch ? `<a class="platform-chip" href="${esc(links.itch)}" target="_blank" rel="noopener noreferrer">itch.io</a>` : '',
+      links.x ? `<a class="platform-chip" href="${esc(links.x)}" target="_blank" rel="noopener noreferrer">X</a>` : '',
     ]
       .filter(Boolean)
-      .join(' · ');
+      .join('');
+
+    const avatarStackHtml = stack.visible
+      .map(
+        (m) =>
+          `<span class="avatar avatar-sm avatar-h${avatarHue(m.handle)}" title="${esc(m.name || m.handle)}">${esc(initials(m.name || m.handle))}</span>`,
+      )
+      .join('') +
+      (stack.overflow > 0 ? `<span class="avatar avatar-sm avatar-overflow">+${stack.overflow}</span>` : '');
 
     const feedHtml = posts.length
       ? posts
           .map((post) => {
-            const time = relativeTime(post.createdAt);
-            const authorLabel = post.authorName
-              ? `${post.authorName} (${post.author})`
-              : post.author;
-            const kindBadge =
-              post.kind && post.kind !== 'other'
-                ? ` · ${esc(post.kind)}`
-                : '';
+            const authorLabel = post.authorName || post.author;
+            const metaLine = postMetaLine(post);
             const showPassOn = quotable && quotable.id === post.id;
             const isOwnPost =
               me.handle && handleKey(post.author) === handleKey(me.handle);
             return `<article class="post-card feed-post" data-post-id="${esc(post.id)}" data-platform="${esc(post.platform)}">
               <div class="post-head">
                 <span class="avatar avatar-h${avatarHue(post.author)}">${esc(initials(post.authorName || post.author))}</span>
-                <span class="post-author">${esc(authorLabel)}</span>
-                <span class="post-time">· ${esc(platformLabel(post.platform))}${kindBadge}${time ? ` · ${esc(time)}` : ''}</span>
+                <div class="post-head-meta">
+                  <span class="post-author">${esc(authorLabel)}</span>
+                  <span class="post-time">${esc(metaLine)}</span>
+                </div>
               </div>
               ${post.text ? `<blockquote>&ldquo;${esc(post.text)}&rdquo;</blockquote>` : ''}
               <p class="anchor-meta"><a href="${esc(post.url)}" target="_blank" rel="noopener noreferrer">View post</a></p>
               ${renderCommentsHtml(post)}
               ${renderPostActionHtml(post, alreadyMember, me)}
-              ${showPassOn ? `<p class="ring-pass-on">${esc(PASS_IT_ON_COPY)}</p>${isOwnPost ? '' : `<p><button type="button" data-pass-on-post="${esc(post.id)}">I passed it on</button></p>`}` : ''}
+              ${
+                showPassOn
+                  ? `<div class="ring-pass-on-bar">
+                      ${isOwnPost ? '' : `<button type="button" class="btn-sm" data-pass-on-post="${esc(post.id)}">I passed it on</button>`}
+                      <details class="pass-on-details">
+                        <summary>About passing it on</summary>
+                        <p class="ring-pass-on">${esc(PASS_IT_ON_COPY)}</p>
+                      </details>
+                    </div>`
+                  : ''
+              }
             </article>`;
           })
           .join('')
@@ -551,108 +606,186 @@ export function mount(rootEl, ctx) {
       (p) => `<option value="${esc(p)}">${esc(platformLabel(p))}</option>`,
     ).join('');
 
+    const relayChipText = relayConfig.relays.length
+      ? `${relayConfig.relays.length} relay${relayConfig.relays.length === 1 ? '' : 's'} configured`
+      : 'Local only \u00b7 relays not configured';
+
     rootEl.innerHTML = `
       <section class="campaign-page">
-        <header class="campaign-game">
-          <h2>${esc(game.name)}</h2>
-          ${gameLinks ? `<p class="game-links">${gameLinks}</p>` : ''}
-          ${game.tags && game.tags.length ? `<p class="game-tags">${game.tags.map(esc).join(', ')}</p>` : ''}
-          <h3>${esc(campaign.title)}${campaign.demo ? ' <span class="demo-badge">DEMO</span>' : ''}</h3>
+        <header class="cabal-page-header ring-header">
+          <div class="cabal-page-header-main">
+            <div class="ring-title-row">
+              <h2>${esc(campaign.title)}</h2>
+              ${campaign.demo ? '<span class="demo-badge">DEMO</span>' : ''}
+            </div>
+            <div class="ring-subtitle-row">
+              <span class="ring-game-name">${esc(game.name)}</span>
+              ${gameLinks}
+              ${game.tags && game.tags.length ? `<span class="game-tags">${game.tags.map(esc).join(' &middot; ')}</span>` : ''}
+            </div>
+            <div class="ring-header-members">
+              <div class="avatar-stack" aria-label="${stack.total} members">${avatarStackHtml}</div>
+              <span class="ring-member-count">${stack.total} ${stack.total === 1 ? 'dev' : 'devs'}</span>
+            </div>
+          </div>
+          <div class="cabal-page-header-actions">
+            <button type="button" id="ring-header-share" class="btn-sm ring-share-icon-btn" aria-label="Copy ring invite link">
+              ${NAV_ICONS.share}<span>Share</span>
+            </button>
+          </div>
         </header>
 
         ${iAmRemoved ? `<p class="ring-removed-notice">${esc(REMOVED_NOTICE)}</p>` : ''}
 
-        ${
-          alreadyMember
-            ? `<section class="campaign-add-post">
-                <h3>Add a post</h3>
-                <form id="add-post-form">
-                  <p class="form-error" id="add-post-errors" hidden></p>
-                  <label>Post URL
-                    <input type="url" name="url" required placeholder="Paste any post URL (X, Reddit, Instagram, YouTube, …)" autocomplete="off">
-                  </label>
-                  <label>Platform
-                    <select name="platform">${platformOptionsHtml}</select>
-                  </label>
-                  <label>Author
-                    <input type="text" name="author" required value="${esc(me.handle || '')}" placeholder="@handle" autocomplete="off">
-                  </label>
-                  <label>Post text or context
-                    <textarea name="text" rows="2" placeholder="Post text (required for X / Bluesky) or a line of context"></textarea>
-                  </label>
-                  <label>Kind
-                    <select name="kind">
-                      <option value="other">Other</option>
-                      <option value="announcement">Announcement</option>
-                      <option value="devlog">Devlog</option>
-                      <option value="clip">Clip</option>
-                    </select>
-                  </label>
-                  <button type="submit" class="primary">Add post</button>
-                </form>
-              </section>`
-            : ''
-        }
+        <div class="ring-tabs" role="tablist" aria-label="Ring sections">
+          <button type="button" class="ring-tab" role="tab" data-ring-tab="feed" aria-selected="${activeTab === 'feed'}">Feed (${posts.length})</button>
+          <button type="button" class="ring-tab" role="tab" data-ring-tab="members" aria-selected="${activeTab === 'members'}">Members (${stack.total})</button>
+          <button type="button" class="ring-tab" role="tab" data-ring-tab="sync" aria-selected="${activeTab === 'sync'}">Sync</button>
+        </div>
 
-        <section class="campaign-feed">
-          <h3>Ring feed</h3>
-          ${feedHtml}
-        </section>
-
-        <section class="ring">
-          <h3>The ring (${(campaign.members || []).length})</h3>
-          ${
-            (campaign.members || []).length || removedRoster(campaign).length
-              ? `<ul class="ring-list">${(campaign.members || [])
-                  .map(
-                    (m) => `<li class="ring-member">
-                      <span class="avatar avatar-h${avatarHue(m.handle)}">${esc(initials(m.name || m.handle))}</span>
-                      <span class="member-name">${esc(m.name)}</span>
-                      <span class="member-handle">${esc(m.handle)}</span>
-                      ${canRemoveMember(campaign, me, m.handle) ? `<button type="button" class="member-remove" data-remove-member="${esc(m.handle)}">Remove</button>` : ''}
-                    </li>`,
-                  )
-                  .join('')}${removedRoster(campaign)
-                  .map(
-                    (r) => `<li class="ring-member ring-member-removed">
-                      <span class="member-handle">${esc(atHandle(r.handle))} — removed</span>
-                    </li>`,
-                  )
-                  .join('')}</ul>`
-              : '<p class="empty-state">No members yet — be the first to join.</p>'
-          }
-        </section>
-
-        <section class="ring-join">
+        <div class="ring-panel" role="tabpanel" data-ring-panel="feed" ${activeTab !== 'feed' ? 'hidden' : ''}>
           ${
             alreadyMember
-              ? '<p>You&rsquo;re in the ring.</p>'
-              : iAmRemoved
-              ? ''
-              : `<h3>Join the ring</h3>
-          <p>Local only — no server, no approval queue. Anyone with the link joins.</p>
-          <form id="ring-join-form">
-            <p class="form-error" id="join-errors" hidden></p>
-            <label>Your name
-              <input type="text" name="name" value="${esc(me.name || '')}" required autocomplete="off">
-            </label>
-            <label>Your handle
-              <input type="text" name="handle" value="${esc(me.handle || '')}" required autocomplete="off" placeholder="@yourhandle">
-            </label>
-            <button type="submit">Join</button>
-          </form>`
+              ? `<details class="add-post-disclosure">
+                  <summary class="btn-sm primary">Add a post</summary>
+                  <form id="add-post-form" class="cabal-form">
+                    <p class="form-error" id="add-post-errors" hidden></p>
+                    <label>Post URL
+                      <input type="url" name="url" required placeholder="Paste any post URL (X, Reddit, Instagram, YouTube, …)" autocomplete="off">
+                    </label>
+                    <div class="cabal-form-row">
+                      <label>Platform
+                        <select name="platform">${platformOptionsHtml}</select>
+                      </label>
+                      <label>Author
+                        <input type="text" name="author" required value="${esc(me.handle || '')}" placeholder="@handle" autocomplete="off">
+                      </label>
+                    </div>
+                    <label>Post text or context
+                      <textarea name="text" rows="2" placeholder="Post text (required for X / Bluesky) or a line of context"></textarea>
+                    </label>
+                    <label>Kind
+                      <select name="kind">
+                        <option value="other">Other</option>
+                        <option value="announcement">Announcement</option>
+                        <option value="devlog">Devlog</option>
+                        <option value="clip">Clip</option>
+                      </select>
+                    </label>
+                    <div class="cabal-form-footer">
+                      <button type="submit" class="primary btn-md">Add post</button>
+                    </div>
+                  </form>
+                </details>`
+              : ''
           }
-        </section>
+          <section class="campaign-feed">
+            ${feedHtml}
+          </section>
+        </div>
 
-        <section class="campaign-share">
-          <h3>Share this campaign</h3>
-          <p>Anyone with this link opens the app straight into this campaign and can join. The link is the invite.</p>
-          <p><input type="text" readonly value="${esc(share.url)}" id="campaign-share-link" aria-label="Campaign link"> <button type="button" id="campaign-share-copy">Copy link</button></p>
-          ${share.note ? `<p class="${esc(share.noteClass)}">${esc(share.note)}</p>` : ''}
-        </section>
+        <div class="ring-panel" role="tabpanel" data-ring-panel="members" ${activeTab !== 'members' ? 'hidden' : ''}>
+          <section class="ring">
+            <h3 class="section-eyebrow">Members (${stack.total})</h3>
+            ${
+              (campaign.members || []).length || removedRoster(campaign).length
+                ? `<ul class="ring-list">${(campaign.members || [])
+                    .map(
+                      (m) => `<li class="ring-member">
+                        <span class="avatar avatar-h${avatarHue(m.handle)}">${esc(initials(m.name || m.handle))}</span>
+                        <span class="member-name">${esc(m.name)}</span>
+                        <span class="member-handle">${esc(m.handle)}</span>
+                        ${canRemoveMember(campaign, me, m.handle) ? `<button type="button" class="member-remove btn-sm" data-remove-member="${esc(m.handle)}">Remove</button>` : ''}
+                      </li>`,
+                    )
+                    .join('')}${removedRoster(campaign)
+                    .map(
+                      (r) => `<li class="ring-member ring-member-removed">
+                        <span class="member-handle">${esc(atHandle(r.handle))} &mdash; removed</span>
+                      </li>`,
+                    )
+                    .join('')}</ul>`
+                : '<p class="empty-state">No members yet — be the first to join.</p>'
+            }
+          </section>
 
-        <p><button type="button" id="back-home">Back to home</button></p>
+          <section class="ring-join">
+            ${
+              alreadyMember
+                ? '<p class="status-pill status-pill--active">You&rsquo;re in this ring</p>'
+                : iAmRemoved
+                ? ''
+                : `<h3 class="section-eyebrow">Join this ring</h3>
+            <p class="view-lede">Local only — anyone with the invite link can join.</p>
+            <form id="ring-join-form" class="cabal-form">
+              <p class="form-error" id="join-errors" hidden></p>
+              <div class="cabal-form-row">
+                <label>Your name
+                  <input type="text" name="name" value="${esc(me.name || '')}" required autocomplete="off">
+                </label>
+                <label>Your handle
+                  <input type="text" name="handle" value="${esc(me.handle || '')}" required autocomplete="off" placeholder="@yourhandle">
+                </label>
+              </div>
+              <div class="cabal-form-footer">
+                <button type="submit" class="primary btn-md">Join ring</button>
+              </div>
+            </form>`
+            }
+          </section>
+
+          <section class="campaign-share">
+            <h3 class="section-eyebrow">Share this ring</h3>
+            <p class="view-lede">Anyone with this link opens this ring and can join.</p>
+            <div class="ring-share-actions">
+              <button type="button" id="campaign-share-copy" class="btn-md">${NAV_ICONS.copy}<span>Copy invite link</span></button>
+            </div>
+            ${share.note ? `<p class="ring-share-note">${esc(share.note)}</p>` : ''}
+            <details class="share-raw-details">
+              <summary>Show raw link</summary>
+              <input type="text" readonly value="${esc(share.url)}" id="campaign-share-link" aria-label="Ring invite link">
+            </details>
+          </section>
+        </div>
+
+        <div class="ring-panel" role="tabpanel" data-ring-panel="sync" ${activeTab !== 'sync' ? 'hidden' : ''}>
+          <section class="ring-sync-intro">
+            <div class="section-head-row">
+              <h3 class="section-eyebrow">Relay sync</h3>
+              <span class="relay-status-chip">${esc(relayChipText)}</span>
+            </div>
+            <p class="view-lede">Optional Nostr relay sync keeps ring posts updated across browsers. Open settings below to configure relays or publish.</p>
+          </section>
+        </div>
       </section>`;
+
+    // Wire tab switching
+    rootEl.querySelectorAll('[data-ring-tab]').forEach((btn) => {
+      btn.addEventListener('click', () => applyTab(btn.dataset.ringTab));
+    });
+    if (typeof ctx?.onTabChange === 'function') {
+      ctx.onTabChange(activeTab);
+    }
+
+    // Wire header Share icon-button & Members-tab Copy button -> clipboard + toast
+    const doc = rootEl.ownerDocument;
+    const headerShareBtn = rootEl.querySelector('#ring-header-share');
+    if (headerShareBtn) {
+      headerShareBtn.addEventListener('click', () => copyShareUrl(share.url, doc));
+    }
+    const copyBtn = rootEl.querySelector('#campaign-share-copy');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', async () => {
+        const ok = await copyShareUrl(share.url, doc);
+        const span = copyBtn.querySelector('span');
+        if (ok && span) {
+          span.textContent = 'Copied!';
+          setTimeout(() => {
+            span.textContent = 'Copy invite link';
+          }, 2000);
+        }
+      });
+    }
 
     // Wire "Add a post" form with passive URL prefill + full manual editability.
     const addPostForm = rootEl.querySelector('#add-post-form');
@@ -761,9 +894,7 @@ export function mount(rootEl, ctx) {
       });
     });
 
-    // "I passed it on" — self-reported receipt for the pass-it-on
-    // milestone. Only on the newest quotable ringmate post; the
-    // callback (app.js) records it privately, never a count.
+    // "I passed it on" — self-reported receipt for the pass-it-on milestone.
     rootEl.querySelectorAll('[data-pass-on-post]').forEach((btn) => {
       btn.addEventListener('click', () => {
         if (typeof ctx.onPassOn === 'function') {
@@ -774,8 +905,7 @@ export function mount(rootEl, ctx) {
       });
     });
 
-    // Creator-only Remove: confirm step, then local state only (relay
-    // publish is V43b's seam — hook ctx.onMemberRemoved if provided).
+    // Creator-only Remove: confirm step, then local state only.
     rootEl.querySelectorAll('[data-remove-member]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const handle = btn.dataset.removeMember;
@@ -813,29 +943,6 @@ export function mount(rootEl, ctx) {
         store.saveMe({ name, handle });
         store.me = { name, handle };
         render();
-      });
-    }
-
-    const back = rootEl.querySelector('#back-home');
-    if (back) back.addEventListener('click', () => navigate('home', {}));
-
-    const copyBtn = rootEl.querySelector('#campaign-share-copy');
-    const shareInput = rootEl.querySelector('#campaign-share-link');
-    if (copyBtn && shareInput) {
-      copyBtn.addEventListener('click', async () => {
-        const text = shareInput.value;
-        try {
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            await navigator.clipboard.writeText(text);
-          } else {
-            shareInput.select();
-            document.execCommand('copy');
-          }
-          copyBtn.textContent = 'Copied!';
-        } catch {
-          shareInput.select();
-          copyBtn.textContent = 'Select and copy';
-        }
       });
     }
   }
