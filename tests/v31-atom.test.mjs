@@ -62,7 +62,8 @@ test('campaignToEntry: stable id, join link, game link, counts, demo note', () =
     /<link rel="related" href="https:\/\/store\.steampowered\.com\/app\/0000000\/Brass_Orchard\/" \/>/,
   );
   assert.match(entry, /<name>@brassorchard<\/name>/);
-  assert.match(entry, /1\/2 posted/);
+  assert.match(entry, /1\/2 ringmates have contributed/);
+  assert.match(entry, /Latest post — x @brassorchard/);
   assert.match(entry, /Example campaign — fictional data\./);
 });
 

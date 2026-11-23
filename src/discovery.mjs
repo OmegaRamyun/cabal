@@ -7,7 +7,7 @@
 // src/campaign.mjs (both re-exported where tests need them).
 
 import { jaccard } from './match.mjs';
-import { postedCount, initials, avatarHue } from './campaign.mjs';
+import { postedCount, latestActivity, relativeTime, initials, avatarHue } from './campaign.mjs';
 
 export { postedCount };
 
@@ -94,9 +94,15 @@ function rowEl(doc, campaign, navigate) {
   const gameName = campaign.game?.name || "Untitled game";
   const tags = (campaign.game?.tags || []).join(", ");
   btn.appendChild(el(doc, "span", initials(gameName), `avatar avatar-h${avatarHue(gameName)}`));
+  // Honest copy: distinct ringmates who have contributed, never an assist
+  // count; latest activity is the newest post or assist, not a window.
+  const contributed = postedCount(campaign);
+  const active = relativeTime(latestActivity(campaign));
   btn.appendChild(el(doc, "span",
     `${gameName} — ${campaign.title} — ` +
-    `${memberCount(campaign)} members, ${postedCount(campaign)} posted` +
+    `${memberCount(campaign)} members, ` +
+    `${contributed} ringmate${contributed === 1 ? " has" : "s have"} contributed` +
+    (active ? ` — active ${active}` : "") +
     (tags ? ` — ${tags}` : ""),
     "discovery-row-label"));
   if (campaign.demo) {
@@ -113,7 +119,7 @@ function rowEl(doc, campaign, navigate) {
 /**
  * mount(rootEl, ctx) ctx: { myTags, campaigns, navigate }
  * Renders two sections, "Similar games" and "Popular". Each row shows
- * game name, title, member count, posted count, tags, and a DEMO badge
+ * game name, title, member count, contributed ringmates, latest activity, tags, and a DEMO badge
  * when demo. Clicking a row calls navigate(campaign) — the caller opens
  * the campaign page (link intent). Read-only: no posting, no storage.
  */

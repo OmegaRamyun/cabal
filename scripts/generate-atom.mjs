@@ -9,17 +9,18 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { buildFeed, APP_URL } from '../src/atom.mjs';
 import { isListable } from '../src/discovery.mjs';
-import { encodeCampaignLink } from '../src/campaign.mjs';
+import { encodeCampaignLink, normalizeCampaign } from '../src/campaign.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const data = JSON.parse(
   await readFile(path.join(root, 'data/campaigns.json'), 'utf8'),
 );
-const campaigns = (Array.isArray(data.campaigns) ? data.campaigns : []).filter(
-  isListable,
-);
+const campaigns = (Array.isArray(data.campaigns) ? data.campaigns : [])
+  .map((c) => normalizeCampaign(c))
+  .filter(isListable);
 const xml = buildFeed(campaigns, {
   linkFor: (c) => encodeCampaignLink(c, APP_URL).url,
+  now: new Date(),
 });
 await writeFile(path.join(root, 'campaigns.atom'), `${xml}\n`, 'utf8');
 console.log(

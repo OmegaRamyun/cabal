@@ -1,1 +1,91 @@
-{"campaigns":[{"anchorPost":{"author":"@toonsouls","platform":"x","text":"ToonSouls is out now — a cartoon souls-like about dying cute and coming back cuter. 💀✨","url":"https://x.com/toonsouls/status/1000000000000000000"},"createdAt":"2026-11-22T09:00:00Z","demo":true,"game":{"links":{"itch":"https://example-dev.itch.io/toon-souls","steam":"https://store.steampowered.com/app/0000000/ToonSouls/"},"name":"ToonSouls","tags":["souls-like","cartoon"]},"id":"cmp_toon001","members":[{"handle":"@toonsouls","name":"Wren Halloway","quoteUrl":"https://x.com/toonsouls/status/1000000000000000001","status":"posted"},{"handle":"@mossfinch","name":"Moss Finch","status":"pending"}],"title":"ToonSouls launch week — help us spread the souls","window":{"end":"2026-11-29","start":"2026-11-22"}}],"updated":"2026-11-23","version":1}
+{
+  "campaigns": [
+    {
+      "anchorPost": {
+        "author": "@toonsouls",
+        "platform": "x",
+        "text": "ToonSouls is out now — a cartoon souls-like about dying cute and coming back cuter. 💀✨",
+        "url": "https://x.com/toonsouls/status/1000000000000000000"
+      },
+      "createdAt": "2026-11-22T09:00:00Z",
+      "demo": true,
+      "game": {
+        "links": {
+          "itch": "https://example-dev.itch.io/toon-souls",
+          "steam": "https://store.steampowered.com/app/0000000/ToonSouls/"
+        },
+        "name": "ToonSouls",
+        "tags": [
+          "souls-like",
+          "cartoon"
+        ]
+      },
+      "id": "cmp_toon001",
+      "members": [
+        {
+          "handle": "@toonsouls",
+          "name": "Wren Halloway"
+        },
+        {
+          "handle": "@mossfinch",
+          "name": "Moss Finch"
+        }
+      ],
+      "posts": [
+        {
+          "assists": [
+            {
+              "contributedAt": "2026-11-22T12:30:00Z",
+              "handle": "@mossfinch",
+              "quoteText": "Dying cute has never felt this good. ToonSouls is out and it is a delight.",
+              "status": "contributed",
+              "url": "https://x.com/mossfinch/status/1000000000000000001"
+            }
+          ],
+          "author": "@toonsouls",
+          "authorName": "Wren Halloway",
+          "createdAt": "2026-11-22T09:00:00Z",
+          "id": "pst_toon0001",
+          "kind": "announcement",
+          "platform": "x",
+          "text": "ToonSouls is out now — a cartoon souls-like about dying cute and coming back cuter. 💀✨",
+          "url": "https://x.com/toonsouls/status/1000000000000000000"
+        },
+        {
+          "assists": [
+            {
+              "contributedAt": "2026-11-23T10:00:00Z",
+              "handle": "@mossfinch",
+              "note": "Upvoted. Shared it with my own followers.",
+              "status": "contributed",
+              "url": "https://x.com/mossfinch/status/1000000000000000002"
+            }
+          ],
+          "author": "@toonsouls",
+          "authorName": "Wren Halloway",
+          "createdAt": "2026-11-23T08:30:00Z",
+          "id": "pst_toon0002",
+          "kind": "devlog",
+          "platform": "reddit",
+          "text": "Devlog: how we animate the cute deaths in ToonSouls, frame by frame.",
+          "url": "https://www.reddit.com/r/gamedev/comments/1abc123/toonsouls_devlog/"
+        },
+        {
+          "assists": [],
+          "author": "@mossfinch",
+          "authorName": "Moss Finch",
+          "createdAt": "2026-11-23T16:00:00Z",
+          "id": "pst_toon0003",
+          "kind": "clip",
+          "platform": "instagram",
+          "text": "Boss fight clip: twenty seconds, three deaths, one very smug skeleton.",
+          "url": "https://www.instagram.com/p/ABC123/"
+        }
+      ],
+      "title": "ToonSouls launch week — help us spread the souls",
+      "window": null
+    }
+  ],
+  "updated": "2026-11-23",
+  "version": 1
+}

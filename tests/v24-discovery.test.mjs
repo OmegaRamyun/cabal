@@ -164,7 +164,7 @@ test("popularCampaigns: listable only, members desc", () => {
   );
 });
 
-test("postedCount counts only posted members", () => {
+test("postedCount counts distinct contributing handles (legacy posted members migrate to assists)", () => {
   assert.equal(postedCount(makeCampaign()), 1);
   assert.equal(postedCount(makeCampaign({ members: [] })), 0);
 });
@@ -252,7 +252,7 @@ test("mount: renders Similar + Popular sections, row detail, DEMO badge, click n
   assert.ok(text.includes("Popular"));
   assert.ok(text.includes("ToonSouls"));
   assert.ok(text.includes("ToonSouls launch week"));
-  assert.ok(text.includes("2 members, 1 posted"));
+  assert.ok(text.includes("2 members, 1 ringmate has contributed"));
   assert.ok(text.includes("souls-like, cartoon"));
   assert.ok(text.includes("DEMO"));
 

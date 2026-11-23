@@ -1,22 +1,39 @@
-// V21 — Campaign object + link intent.
+// V21/V38 — Campaign object + link intent (sustained-ring model, v2).
 // Pure functions only. No DOM, no storage, no network, no posting.
-// Campaign shape (frozen, see tasks/V21-campaign-core.md):
+// Spec: cabal-bench/redesign-sustained-ring.md (sections 1-4).
+// Campaign shape v2:
 //   { id, game: { name, links: { steam?, itch?, x? }, tags: string[] },
-//     title, anchorPost: { platform: 'x'|'bluesky'|'threads', url, text, author },
-//     window: { start, end } | null,
-//     members: [{ name, handle, platform?, status: 'posted'|'pending', quoteUrl?, postedAt?, quoteText? }],
+//     title,
+//     posts: [{ id: 'pst_xxxxxxxx', author, authorName?, platform, url, text?,
+//               kind?, createdAt,
+//               assists: [{ handle, status: 'contributed', contributedAt,
+//                           url?, quoteText?, note? }] }],   // oldest first
+//     anchorPost,            // legacy mirror of posts[0]: { platform, url, text, author }
+//     members: [{ name, handle, platform? }],                // roster only
+//     window: { start, end } | null,                         // DEPRECATED, ignored by UI
 //     createdAt, demo? }
+// The old anchor-only shape (anchorPost + members with status) is still
+// accepted everywhere and migrated by normalizeCampaign.
 
 export const PLATFORMS = Object.freeze(["x", "bluesky", "threads"]);
+// Display labels for ring posts (labels only, never integrations).
+export const POST_PLATFORMS = Object.freeze([
+  "x", "bluesky", "threads", "reddit", "instagram", "tiktok", "youtube", "other",
+]);
+export const POST_KINDS = Object.freeze(["announcement", "devlog", "clip", "other"]);
+export const NOTE_MAX = 280;
 export const LINK_LONG_LIMIT = 2000;
 
 const isNonEmptyString = (v) => typeof v === "string" && v.trim().length > 0;
+const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+const lc = (v) => String(v ?? "").trim().toLowerCase();
+const COMPOSER_PLATFORMS = new Set(["x", "bluesky"]);
 
 function clone(v) {
   return v === undefined ? undefined : JSON.parse(JSON.stringify(v));
 }
 
-function randomId() {
+function randomId(prefix = "cmp") {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
   let s = "";
   const buf = new Uint8Array(8);
@@ -26,15 +43,85 @@ function randomId() {
   } else {
     for (let i = 0; i < 8; i++) s += chars[Math.floor(Math.random() * 36)];
   }
-  return `cmp_${s}`;
+  return `${prefix}_${s}`;
+}
+
+// Deterministic pst_ id (8 lowercase alphanumerics) so migrating the same
+// old-shape campaign twice yields the same post id (FNV-1a, two lanes).
+function derivedPostId(seed) {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let h1 = 0x811c9dc5, h2 = 0x01000193;
+  const str = String(seed);
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
+    h2 = Math.imul(h2 + c, 0x85ebca6b) >>> 0;
+  }
+  let s = "";
+  for (let i = 0; i < 4; i++) { s += chars[h1 % 36]; h1 = Math.floor(h1 / 36); }
+  for (let i = 0; i < 4; i++) { s += chars[h2 % 36]; h2 = Math.floor(h2 / 36); }
+  return `pst_${s}`;
+}
+
+function isHttpUrl(s) {
+  if (typeof s !== "string" || !/^https?:\/\//i.test(s.trim())) return false;
+  try {
+    const u = new URL(s.trim());
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+const validDate = (v) => isNonEmptyString(v) && !Number.isNaN(Date.parse(v));
+
+/** Validate one assist; pushes messages prefixed with `where`. */
+function validateAssist(a, where, errors) {
+  if (!isObj(a)) { errors.push(`${where}: not an object`); return; }
+  if (!isNonEmptyString(a.handle)) errors.push(`${where}.handle: missing`);
+  if (!validDate(a.contributedAt)) errors.push(`${where}.contributedAt: missing or not a valid date`);
+  if (a.url !== undefined && a.url !== null && a.url !== "" && !isHttpUrl(a.url)) {
+    errors.push(`${where}.url: must be an http(s) URL`);
+  }
+  if (a.note !== undefined && a.note !== null) {
+    if (typeof a.note !== "string") errors.push(`${where}.note: must be text`);
+    else if (a.note.length > NOTE_MAX) errors.push(`${where}.note: max ${NOTE_MAX} characters`);
+  }
 }
 
 /**
- * validateCampaign(c) -> string[] (empty = valid).
+ * validatePost(post, { strict? }) -> string[]. Requires id, author, platform
+ * (non-empty string), url (http/https), createdAt (valid date), and any
+ * assists valid. `strict` (used for NEW posts: addPost / createCampaign
+ * input) additionally requires `text` for x/bluesky posts, because the
+ * similarity gate scores against it. Decoding stays lenient.
+ */
+export function validatePost(post, { strict = false, where = "post" } = {}) {
+  const errors = [];
+  if (!isObj(post)) return [`${where}: not an object`];
+  if (!isNonEmptyString(post.id)) errors.push(`${where}.id: missing`);
+  if (!isNonEmptyString(post.author)) errors.push(`${where}.author: missing`);
+  if (!isNonEmptyString(post.platform)) errors.push(`${where}.platform: missing`);
+  if (!isHttpUrl(post.url)) errors.push(`${where}.url: must be an http(s) URL`);
+  if (!validDate(post.createdAt)) errors.push(`${where}.createdAt: missing or not a valid date`);
+  if (strict && COMPOSER_PLATFORMS.has(post.platform) && !isNonEmptyString(post.text)) {
+    errors.push(`${where}.text: required for x/bluesky posts`);
+  }
+  if (post.assists !== undefined) {
+    if (!Array.isArray(post.assists)) errors.push(`${where}.assists: must be an array`);
+    else post.assists.forEach((a, i) => validateAssist(a, `${where}.assists[${i}]`, errors));
+  }
+  return errors;
+}
+
+/**
+ * validateCampaign(c) -> string[] (empty = valid). Accepts BOTH shapes.
  * Requires: game.name, at least one of game.links.steam / game.links.itch,
- * anchorPost.url + text + author (+ a known platform), title, members >= 1
- * each with name + handle. A non-null window needs valid start/end dates
- * with start <= end.
+ * title, members >= 1 each with name + handle, valid createdAt, and EITHER
+ * a non-empty `posts` array (v2) OR an `anchorPost` with url + text + author
+ * + a known platform (legacy). A non-null window needs valid start/end
+ * dates with start <= end. Member `status` is legacy: when present it must
+ * be 'posted' or 'pending'.
  */
 export function validateCampaign(c) {
   const errors = [];
@@ -53,8 +140,17 @@ export function validateCampaign(c) {
       errors.push("game.tags: must be an array");
     }
   }
-  if (!c.anchorPost || typeof c.anchorPost !== "object") {
-    errors.push("anchorPost: missing");
+  if (Array.isArray(c.posts) && c.posts.length > 0) {
+    const seen = new Set();
+    c.posts.forEach((p, i) => {
+      errors.push(...validatePost(p, { where: `posts[${i}]` }));
+      if (isObj(p) && isNonEmptyString(p.id)) {
+        if (seen.has(p.id)) errors.push(`posts[${i}].id: duplicate`);
+        seen.add(p.id);
+      }
+    });
+  } else if (!c.anchorPost || typeof c.anchorPost !== "object") {
+    errors.push("posts: at least one post (or an anchorPost) is required");
   } else {
     if (!PLATFORMS.includes(c.anchorPost.platform)) {
       errors.push("anchorPost.platform: must be one of x, bluesky, threads");
@@ -79,23 +175,120 @@ export function validateCampaign(c) {
       if (!m || typeof m !== "object") { errors.push(`members[${i}]: not an object`); return; }
       if (!isNonEmptyString(m.name)) errors.push(`members[${i}].name: missing`);
       if (!isNonEmptyString(m.handle)) errors.push(`members[${i}].handle: missing`);
-      if (m.status !== "posted" && m.status !== "pending") {
+      if (m.status !== undefined && m.status !== "posted" && m.status !== "pending") {
         errors.push(`members[${i}].status: must be 'posted' or 'pending'`);
       }
     });
   }
-  if (!isNonEmptyString(c.createdAt) || Number.isNaN(Date.parse(c.createdAt))) {
+  if (!validDate(c.createdAt)) {
     errors.push("createdAt: missing or not a valid date");
   }
   return errors;
 }
 
+function postFromAnchor(c) {
+  const a = c.anchorPost;
+  return {
+    id: derivedPostId(`${c.id ?? ""}|${a.url ?? ""}`),
+    author: a.author,
+    platform: a.platform,
+    url: a.url,
+    ...(a.text !== undefined ? { text: a.text } : {}),
+    kind: "announcement",
+    createdAt: c.createdAt,
+    assists: [],
+  };
+}
+
+function cleanNote(note) {
+  if (typeof note !== "string") return undefined;
+  const t = note.trim().slice(0, NOTE_MAX);
+  return t || undefined;
+}
+
+function upsertAssist(post, assist) {
+  const key = lc(assist.handle);
+  const list = Array.isArray(post.assists) ? post.assists : [];
+  const i = list.findIndex((a) => lc(a?.handle) === key);
+  if (i === -1) post.assists = [...list, assist];
+  else post.assists = list.map((a, j) => (j === i ? assist : a));
+}
+
 /**
- * createCampaign({ game, title, anchorPost, window, creator?, me?, members?, demo? })
- * Validates, assigns id + createdAt. The creator is members[0] with status
- * 'pending'. The creator is supplied as `creator` (or `me`, same shape
- * { name, handle, platform? }); a `members` array may be passed instead, in
- * which case its first entry is the creator and is forced to 'pending'.
+ * normalizeCampaign(c) -> v2 campaign (NEW object, input untouched). Pure;
+ * never throws — malformed input comes back unchanged (cloned when possible)
+ * for validateCampaign to report. Idempotent.
+ *  - posts present: kept (each gains assists: [] / notes clipped to 280);
+ *    anchorPost derived from posts[0] when missing.
+ *  - posts missing, anchorPost present: posts = [postFromAnchor] with a
+ *    deterministic pst_ id and createdAt = campaign.createdAt.
+ *  - member state migrates: status 'posted' -> an assist on posts[0]
+ *    (contributedAt = postedAt or createdAt, url = quoteUrl, quoteText);
+ *    'pending' -> plain roster entry. status/quoteUrl/postedAt/quoteText
+ *    are stripped from the roster. `window` passes through untouched.
+ */
+export function normalizeCampaign(c) {
+  try {
+    if (!isObj(c)) return c;
+    const next = clone(c);
+    if (!Array.isArray(next.posts) || next.posts.length === 0) {
+      if (isObj(next.anchorPost)) next.posts = [postFromAnchor(next)];
+      else return next;
+    }
+    next.posts = next.posts.filter(isObj).map((p) => {
+      const post = { ...p };
+      const assists = Array.isArray(p.assists) ? p.assists.filter(isObj) : [];
+      post.assists = assists.map((a) => {
+        const out = { ...a, status: a.status || "contributed" };
+        if (typeof out.note === "string") {
+          const n = cleanNote(out.note);
+          if (n) out.note = n; else delete out.note;
+        }
+        return out;
+      });
+      return post;
+    });
+    if (next.posts.length === 0) return clone(c);
+    if (!isObj(next.anchorPost)) {
+      const p0 = next.posts[0];
+      next.anchorPost = {
+        platform: p0.platform, url: p0.url,
+        ...(p0.text !== undefined ? { text: p0.text } : {}),
+        author: p0.author,
+      };
+    }
+    if (Array.isArray(next.members)) {
+      const first = next.posts[0];
+      next.members = next.members.map((m) => {
+        if (!isObj(m)) return m;
+        const { status, quoteUrl, postedAt, quoteText, ...roster } = m;
+        if (status === "posted" && isNonEmptyString(m.handle)) {
+          const exists = (first.assists || []).some((a) => lc(a.handle) === lc(m.handle));
+          if (!exists) {
+            first.assists.push({
+              handle: m.handle,
+              status: "contributed",
+              contributedAt: postedAt || next.createdAt,
+              ...(quoteUrl ? { url: quoteUrl } : {}),
+              ...(quoteText ? { quoteText } : {}),
+            });
+          }
+        }
+        return roster;
+      });
+    }
+    return next;
+  } catch {
+    return c;
+  }
+}
+
+/**
+ * createCampaign({ game, title, anchorPost?, posts?, window, creator?, me?, members?, demo? })
+ * Validates, assigns id + createdAt. The creator is members[0] (roster
+ * only — no per-member status in v2). Supply `posts` (array of post input)
+ * or the legacy `anchorPost` (becomes posts[0]); with `posts`, anchorPost
+ * mirrors posts[0]. New campaigns should pass window: null (open-ended).
  * Throws an Error listing the validation failures.
  */
 export function createCampaign(input = {}) {
@@ -106,38 +299,87 @@ export function createCampaign(input = {}) {
     members = input.members.map((m) => ({
       name: m.name, handle: m.handle,
       ...(m.platform ? { platform: m.platform } : {}),
-      status: "pending",
-      ...(m.quoteUrl ? { quoteUrl: m.quoteUrl } : {}),
     }));
   } else if (creator) {
     members = [{
       name: creator.name, handle: creator.handle,
       ...(creator.platform ? { platform: creator.platform } : {}),
-      status: "pending",
     }];
   }
-  const campaign = {
-    id: randomId(),
+  const createdAt = new Date().toISOString();
+  const id = randomId("cmp");
+  const base = {
+    id,
     game: {
       name: game?.name,
       links: { ...(game?.links || {}) },
       tags: Array.isArray(game?.tags) ? [...game.tags] : [],
     },
     title,
-    anchorPost: anchorPost ? { ...anchorPost } : undefined,
     window: win ? { start: win.start, end: win.end } : null,
     members,
-    createdAt: new Date().toISOString(),
+    createdAt,
     ...(demo === true ? { demo: true } : {}),
   };
-  const errors = validateCampaign(campaign);
+  const errors = [];
+  if (Array.isArray(input.posts) && input.posts.length > 0) {
+    const ids = new Set();
+    base.posts = input.posts.map((p, i) => {
+      const post = buildPost(p, createdAt);
+      if (ids.has(post.id)) post.id = randomId("pst");
+      ids.add(post.id);
+      errors.push(...validatePost(post, { strict: true, where: `posts[${i}]` }));
+      return post;
+    });
+  } else {
+    base.anchorPost = anchorPost ? { ...anchorPost } : undefined;
+  }
+  const campaign = normalizeCampaign(base);
+  errors.push(...validateCampaign(campaign));
   if (errors.length > 0) {
-    throw new Error(`Invalid campaign: ${errors.join("; ")}`);
+    throw new Error(`Invalid campaign: ${[...new Set(errors)].join("; ")}`);
   }
   return campaign;
 }
 
-/** addMember(campaign, { name, handle, platform? }) -> NEW campaign, no mutation. No-op (same content, new object) if the handle is already a member (case-insensitive). */
+function buildPost(input, nowIso) {
+  const i = isObj(input) ? input : {};
+  const url = typeof i.url === "string" ? i.url.trim() : i.url;
+  const text = typeof i.text === "string" ? i.text.trim() : undefined;
+  return {
+    id: isNonEmptyString(i.id) ? i.id.trim() : randomId("pst"),
+    author: typeof i.author === "string" ? i.author.trim() : i.author,
+    ...(isNonEmptyString(i.authorName) ? { authorName: i.authorName.trim() } : {}),
+    platform: isNonEmptyString(i.platform) ? i.platform.trim().toLowerCase() : detectPlatform(url),
+    url,
+    ...(text ? { text } : {}),
+    kind: POST_KINDS.includes(i.kind) ? i.kind : "other",
+    createdAt: isNonEmptyString(i.createdAt) ? i.createdAt : nowIso,
+    assists: Array.isArray(i.assists) ? clone(i.assists) : [],
+  };
+}
+
+/**
+ * addPost(campaign, postInput) -> NEW campaign with the post appended.
+ * Assigns a pst_ id + createdAt when missing; platform defaults to
+ * detectPlatform(url). Throws like createCampaign when the post is invalid
+ * (x/bluesky posts need text — the gate scores against it). anchorPost is
+ * left alone (it mirrors posts[0]).
+ */
+export function addPost(campaign, postInput) {
+  const next = normalizeCampaign(campaign);
+  const post = buildPost(postInput, new Date().toISOString());
+  const errors = validatePost(post, { strict: true });
+  if (Array.isArray(next?.posts) && next.posts.some((p) => p.id === post.id)) {
+    errors.push("post.id: already used in this campaign");
+  }
+  if (errors.length > 0) throw new Error(`Invalid post: ${errors.join("; ")}`);
+  if (!Array.isArray(next?.posts)) throw new Error("Invalid post: campaign has no posts");
+  next.posts = [...next.posts, post];
+  return next;
+}
+
+/** addMember(campaign, { name, handle, platform? }) -> NEW campaign, no mutation. No-op (same content, new object) if the handle is already a member (case-insensitive). Roster only: no status. */
 export function addMember(campaign, member) {
   const next = clone(campaign);
   const handle = String(member?.handle ?? "").trim();
@@ -149,24 +391,191 @@ export function addMember(campaign, member) {
   next.members = [...(next.members || []), {
     name: member.name, handle,
     ...(member.platform ? { platform: member.platform } : {}),
-    status: "pending",
   }];
   return next;
 }
 
-/** markPosted(campaign, handle, quoteUrl?, now?) -> NEW campaign; that member's status becomes 'posted' and gets a postedAt stamp. Unknown handle: returns an unchanged copy. */
-export function markPosted(campaign, handle, quoteUrl, now) {
-  const next = clone(campaign);
-  const target = String(handle ?? "").trim().toLowerCase();
+function stampOf(now) {
   const parsed = toTime(now ?? new Date());
-  const stamp = new Date(Number.isNaN(parsed) ? Date.now() : parsed).toISOString();
-  next.members = (next.members || []).map((m) => {
-    if (String(m.handle).trim().toLowerCase() !== target) return m;
-    const updated = { ...m, status: "posted", postedAt: stamp };
-    if (quoteUrl) updated.quoteUrl = quoteUrl;
-    return updated;
-  });
+  return new Date(Number.isNaN(parsed) ? Date.now() : parsed).toISOString();
+}
+
+/**
+ * markContributed(campaign, postId, handle, { url?, quoteText?, note?, now? })
+ * -> NEW campaign; upserts that handle's assist on that post (case-
+ * insensitive handle: a second mark UPDATES in place, never duplicates;
+ * fields omitted from opts keep their old value, '' clears one). Sets
+ * contributedAt. `note` is the Enscryption receipt (spec 2a): plain text,
+ * clipped to 280 chars. Unknown postId or blank handle: unchanged copy.
+ * Self-reported, unchecked.
+ */
+export function markContributed(campaign, postId, handle, opts = {}) {
+  const next = normalizeCampaign(campaign);
+  const who = String(handle ?? "").trim();
+  const post = Array.isArray(next?.posts) ? next.posts.find((p) => p.id === postId) : null;
+  if (!who || !post) return next;
+  const o = isObj(opts) ? opts : {};
+  const prev = (post.assists || []).find((a) => lc(a.handle) === lc(who)) || {};
+  const assist = { ...prev, handle: prev.handle || who, status: "contributed", contributedAt: stampOf(o.now) };
+  if (o.url !== undefined) {
+    const u = typeof o.url === "string" ? o.url.trim() : "";
+    if (u) assist.url = u; else delete assist.url;
+  }
+  if (o.quoteText !== undefined) {
+    const q = typeof o.quoteText === "string" ? o.quoteText.trim() : "";
+    if (q) assist.quoteText = q; else delete assist.quoteText;
+  }
+  if (o.note !== undefined) {
+    const n = cleanNote(o.note);
+    if (n) assist.note = n; else delete assist.note;
+  }
+  upsertAssist(post, assist);
   return next;
+}
+
+/**
+ * markPosted(campaign, handle, quoteUrl?, now?) — DEPRECATED wrapper kept so
+ * nothing breaks mid-round (V39 moves callers to markContributed). Marks
+ * that member contributed on posts[0] with quoteUrl as the contribution
+ * link. Non-member handle: unchanged copy.
+ */
+export function markPosted(campaign, handle, quoteUrl, now) {
+  const next = normalizeCampaign(campaign);
+  const who = lc(handle);
+  const isMember = (next?.members || []).some((m) => lc(m?.handle) === who);
+  if (!isMember || !Array.isArray(next?.posts) || !next.posts[0]) return next;
+  return markContributed(next, next.posts[0].id, String(handle).trim(), {
+    ...(quoteUrl ? { url: quoteUrl } : {}),
+    now,
+  });
+}
+
+/** postAssists(post) -> the post's assist array (empty when none). */
+export function postAssists(post) {
+  return Array.isArray(post?.assists) ? post.assists : [];
+}
+
+const timeOf = (iso) => {
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? null : t;
+};
+
+/** latestPost(campaign) -> newest post by createdAt (later storage wins ties), or null. */
+export function latestPost(campaign) {
+  const posts = normalizeCampaign(campaign)?.posts;
+  if (!Array.isArray(posts) || posts.length === 0) return null;
+  let best = null, bestT = -Infinity;
+  for (const p of posts) {
+    const t = timeOf(p?.createdAt);
+    if (t !== null && t >= bestT) { best = p; bestT = t; }
+  }
+  return best ?? posts[posts.length - 1];
+}
+
+/**
+ * latestActivity(campaign) -> ISO string of the newest post OR assist
+ * timestamp; falls back to campaign.createdAt (or "" when that is missing).
+ */
+export function latestActivity(campaign) {
+  const c = normalizeCampaign(campaign);
+  let best = null, bestT = -Infinity;
+  const see = (iso) => {
+    const t = timeOf(iso);
+    if (t !== null && t > bestT) { best = iso; bestT = t; }
+  };
+  for (const p of Array.isArray(c?.posts) ? c.posts : []) {
+    see(p?.createdAt);
+    for (const a of postAssists(p)) see(a?.contributedAt);
+  }
+  return best ?? (isNonEmptyString(c?.createdAt) ? c.createdAt : "");
+}
+
+/**
+ * unassistedPostsFor(campaign, handle) -> posts (newest first) that the
+ * handle has not assisted. The handle's OWN posts are excluded: an author
+ * does not owe their own post an assist. Feeds the home "your turn" list.
+ */
+export function unassistedPostsFor(campaign, handle) {
+  const who = lc(handle);
+  const posts = normalizeCampaign(campaign)?.posts;
+  if (!who || !Array.isArray(posts)) return [];
+  return posts
+    .map((p, i) => ({ p, i }))
+    .filter(({ p }) => lc(p.author) !== who && !postAssists(p).some((a) => lc(a?.handle) === who))
+    .sort((a, b) => (timeOf(b.p.createdAt) ?? 0) - (timeOf(a.p.createdAt) ?? 0) || b.i - a.i)
+    .map(({ p }) => p);
+}
+
+// ---- URL recognition (pure: the URL string is the only input) ----
+
+const HOSTS = [
+  ["x", ["x.com", "twitter.com"]],
+  ["bluesky", ["bsky.app"]],
+  ["threads", ["threads.net", "threads.com"]],
+  ["reddit", ["reddit.com"]],
+  ["instagram", ["instagram.com"]],
+  ["tiktok", ["tiktok.com"]],
+  ["youtube", ["youtube.com", "youtu.be"]],
+];
+
+function parseUrl(url) {
+  if (typeof url !== "string") return null;
+  let s = url.trim();
+  if (!s || /\s/.test(s)) return null;
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) {
+    if (/^[a-z][a-z0-9+.-]*:/i.test(s) && !/^[^/]+:\d+(\/|$)/.test(s)) return null;
+    s = `https://${s}`;
+  }
+  try {
+    const u = new URL(s);
+    return u.protocol === "http:" || u.protocol === "https:" ? u : null;
+  } catch {
+    return null;
+  }
+}
+
+function platformOfHost(host) {
+  const h = host.toLowerCase();
+  for (const [platform, domains] of HOSTS) {
+    if (domains.some((d) => h === d || h.endsWith(`.${d}`))) return platform;
+  }
+  return "other";
+}
+
+/** detectPlatform(url) -> x|bluesky|threads|reddit|instagram|tiktok|youtube|other. Hostname only; never throws, never fetches. */
+export function detectPlatform(url) {
+  const u = parseUrl(url);
+  return u ? platformOfHost(u.hostname) : "other";
+}
+
+/**
+ * parsePostUrl(url) -> { platform, author?, title?, text? }. Extracts ONLY
+ * what the URL path itself carries: x `/<handle>/status/<id>` -> author;
+ * reddit `/r/<sub>/comments/<id>/<slug>` -> title from the slug (best
+ * effort, <= 120 chars). Everything else: platform only. Never throws,
+ * never fetches. A convenience prefill, never a gate.
+ */
+export function parsePostUrl(url) {
+  try {
+    const u = parseUrl(url);
+    if (!u) return { platform: "other" };
+    const platform = platformOfHost(u.hostname);
+    const parts = u.pathname.split("/").filter(Boolean);
+    if (platform === "x") {
+      const m = parts.length >= 3 && /^status(es)?$/i.test(parts[1]) && /^\w{1,15}$/.test(parts[0]) && parts[0].toLowerCase() !== "i";
+      if (m) return { platform, author: `@${parts[0]}` };
+    } else if (platform === "reddit") {
+      if (parts.length >= 5 && parts[0].toLowerCase() === "r" && parts[2].toLowerCase() === "comments" && parts[4]) {
+        let slug = parts[4];
+        try { slug = decodeURIComponent(slug); } catch { /* keep raw slug */ }
+        const title = slug.replace(/[-_]+/g, " ").trim().slice(0, 120).trim();
+        if (title) return { platform, title };
+      }
+    }
+    return { platform };
+  } catch {
+    return { platform: "other" };
+  }
 }
 
 /**
@@ -209,12 +618,34 @@ export function avatarHue(value) {
   return h % AVATAR_HUES;
 }
 
+/**
+ * postedCount(campaign) — number of DISTINCT handles with at least one
+ * assist anywhere in the ring (case-insensitive). NOT an assist count:
+ * counting assists would be a ledger, which the hard don'ts ban. Name kept
+ * for discovery; semantics are "ringmates who have contributed".
+ */
 export function postedCount(campaign) {
-  return (campaign?.members || []).filter((m) => m.status === "posted").length;
+  const seen = new Set();
+  for (const p of normalizeCampaign(campaign)?.posts ?? []) {
+    for (const a of postAssists(p)) {
+      const h = lc(a?.handle);
+      if (h) seen.add(h);
+    }
+  }
+  return seen.size;
 }
 
+/**
+ * pendingMembers — DEPRECATED SHIM. The spec deletes it (no per-member status
+ * in v2) but src/home.mjs, which this task may not edit, still imports it;
+ * removing the export would break that module's load. Returns roster members
+ * with no assist anywhere in the ring. V39 removes the caller; delete then.
+ */
 export function pendingMembers(campaign) {
-  return (campaign?.members || []).filter((m) => m.status !== "posted");
+  const c = normalizeCampaign(campaign);
+  const done = new Set();
+  for (const p of c?.posts ?? []) for (const a of postAssists(p)) done.add(lc(a?.handle));
+  return (c?.members || []).filter((m) => !done.has(lc(m?.handle)));
 }
 
 function toTime(v) {
@@ -298,7 +729,7 @@ export function decodeCampaignLink(hash) {
     const idx = hash.indexOf("#c=");
     const payload = idx >= 0 ? hash.slice(idx + 3) : hash.startsWith("c=") ? hash.slice(2) : null;
     if (!payload) return { error: "no campaign payload in link" };
-    const campaign = JSON.parse(base64urlDecode(payload));
+    const campaign = normalizeCampaign(JSON.parse(base64urlDecode(payload)));
     const errors = validateCampaign(campaign);
     if (errors.length > 0) return { error: `invalid campaign: ${errors.join("; ")}` };
     return { campaign };
