@@ -5,9 +5,12 @@
 // copy), example uses, tags. Pure functions in the core; DOM only in mount().
 // No storage, no network, no scores for people.
 
+import { createStore } from "./store.mjs";
+
 const isNonEmptyString = (v) => typeof v === "string" && v.trim().length > 0;
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const lc = (v) => String(v ?? "").trim().toLowerCase();
+const handleKey = (h) => String(h ?? "").trim().replace(/^@+/, "").toLowerCase();
 
 export const FORMAT_ID_RE = /^fmt_[a-z0-9]{8}$/;
 
@@ -183,6 +186,68 @@ export function ringsRunningFormat(formatId, rings) {
   );
 }
 
+// ---- V59: format-page adopt helpers (pure) ----
+
+/**
+ * True when `me.handle` is a current (non-removed) member of `ring`.
+ * Membership is by handle (case-insensitive, leading `@` ignored).
+ */
+export function isRingMember(ring, me) {
+  if (!isObj(ring) || !isObj(me)) return false;
+  const who = handleKey(me.handle);
+  if (!who) return false;
+  const removed = Array.isArray(ring.removedMembers) ? ring.removedMembers : [];
+  if (removed.some((r) => handleKey(r?.handle) === who)) return false;
+  const members = Array.isArray(ring.members) ? ring.members : [];
+  return members.some((m) => handleKey(m?.handle) === who);
+}
+
+/**
+ * adoptableRingsForFormat(formatId, myRings, me) -> picker entries for
+ * "Run this template in my ring". Only includes rings where `me` is a
+ * non-removed member. Non-running rings sort before already-running ones,
+ * preserving relative order within each group.
+ */
+export function adoptableRingsForFormat(formatId, myRings, me) {
+  const want = typeof formatId === "string" ? lc(formatId) : "";
+  if (!FORMAT_ID_RE.test(want)) return [];
+  const list = Array.isArray(myRings) ? myRings : [];
+  const available = [];
+  const running = [];
+  for (const r of list) {
+    if (!isObj(r) || !isNonEmptyString(r.id)) continue;
+    if (!isRingMember(r, me)) continue;
+    const alreadyRunning = formatIdsForRing(r).includes(want);
+    const entry = {
+      ring: r,
+      id: r.id,
+      title: isNonEmptyString(r.title) ? r.title.trim() : r.id,
+      gameName: isNonEmptyString(r.game?.name) ? r.game.name.trim() : "",
+      alreadyRunning,
+      demo: r.demo === true,
+    };
+    if (alreadyRunning) running.push(entry);
+    else available.push(entry);
+  }
+  return [...available, ...running];
+}
+
+/**
+ * adoptFormatIntoRing(ring, formatId, me) -> { ok, ring, changed, reason? }.
+ * Any current member may adopt; non-members or invalid format ids are rejected.
+ * Already-running templates return { ok: true, ring, changed: false } (no-op).
+ */
+export function adoptFormatIntoRing(ring, formatId, me) {
+  if (!isObj(ring)) return { ok: false, ring, changed: false, reason: "invalid-ring" };
+  const want = typeof formatId === "string" ? lc(formatId) : "";
+  if (!FORMAT_ID_RE.test(want)) return { ok: false, ring, changed: false, reason: "invalid-format" };
+  if (!isRingMember(ring, me)) return { ok: false, ring, changed: false, reason: "not-a-member" };
+  const before = formatIdsForRing(ring);
+  const updated = adoptTemplate(ring, want);
+  const changed = !before.includes(want);
+  return { ok: true, ring: updated, changed };
+}
+
 // Accepts a Map(id -> count), an array of [id, count] pairs, an array of
 // { id, count } objects, or a plain object. Counts must be finite >= 0.
 // V48: also accepts the V46 shape — values of { rings: Set, assists: n }
@@ -326,8 +391,133 @@ export function mount(rootEl, ctx = {}) {
   const start = el(doc, "a", "Start a ring", "format-start primary btn-md");
   start.href = typeof ctx.startHref === "string" ? ctx.startHref : "#/rings";
   actions.appendChild(start);
+
+  const adoptBtn = el(doc, "button", "Run this template in my ring", "format-adopt-btn btn-md");
+  adoptBtn.type = "button";
+  actions.appendChild(adoptBtn);
   header.appendChild(actions);
   page.appendChild(header);
+
+  const resolveLocalStore = () => ctx.store || createStore();
+  const readMyRings = () => {
+    if (Array.isArray(ctx.myRings)) return ctx.myRings;
+    const s = resolveLocalStore();
+    if (typeof s.loadCampaigns === "function") return s.loadCampaigns();
+    return Array.isArray(s.campaigns) ? s.campaigns : [];
+  };
+  const readMe = () => {
+    if (ctx.me !== undefined) return ctx.me;
+    const s = resolveLocalStore();
+    if (typeof s.loadMe === "function") return s.loadMe();
+    return s.me || null;
+  };
+  const saveUpdatedRing = (updated) => {
+    const s = resolveLocalStore();
+    const list = readMyRings().slice();
+    const idx = list.findIndex((c) => c.id === updated.id);
+    if (idx >= 0) list[idx] = updated;
+    else list.push(updated);
+    if (typeof s.saveCampaigns === "function") s.saveCampaigns(list);
+    else if (s && "campaigns" in s) s.campaigns = list;
+  };
+
+  let activePicker = null;
+  const closePicker = () => {
+    if (!activePicker) return;
+    const { backdrop, sheet, onKey } = activePicker;
+    activePicker = null;
+    if (onKey && typeof doc.removeEventListener === "function") {
+      doc.removeEventListener("keydown", onKey);
+    }
+    if (typeof backdrop.remove === "function") backdrop.remove();
+    if (typeof sheet.remove === "function") sheet.remove();
+  };
+
+  const openRingPicker = () => {
+    closePicker();
+    const me = readMe();
+    const entries = adoptableRingsForFormat(f.id, readMyRings(), me);
+
+    const backdrop = el(doc, "div", null, "adopt-picker-backdrop is-open");
+    const sheet = el(doc, "div", null, "adopt-picker-sheet is-open");
+    if (typeof sheet.setAttribute === "function") {
+      sheet.setAttribute("role", "dialog");
+      sheet.setAttribute("aria-modal", "true");
+      sheet.setAttribute("aria-label", "Run this template in my ring");
+    }
+
+    const handleArea = el(doc, "div", null, "adopt-sheet-handle-area");
+    handleArea.appendChild(el(doc, "span", null, "adopt-sheet-handle"));
+    handleArea.addEventListener("click", closePicker);
+    sheet.appendChild(handleArea);
+
+    const head = el(doc, "div", null, "adopt-picker-head");
+    head.appendChild(el(doc, "h3", "Run in one of your rings", "adopt-picker-title"));
+    const closeBtn = el(doc, "button", "Close", "btn-sm adopt-picker-close");
+    closeBtn.type = "button";
+    closeBtn.addEventListener("click", closePicker);
+    head.appendChild(closeBtn);
+    sheet.appendChild(head);
+
+    const body = el(doc, "div", null, "adopt-picker-body");
+    if (!entries.length) {
+      const msg = !me?.handle
+        ? "Join or start a ring first to run this template."
+        : "You are not a member of any rings yet.";
+      body.appendChild(el(doc, "p", msg, "empty-state"));
+      const startLink = el(doc, "a", "Start a ring with this template", "primary btn-sm");
+      startLink.href = start.href;
+      startLink.addEventListener("click", closePicker);
+      body.appendChild(startLink);
+    } else {
+      const list = el(doc, "ul", null, "adopt-picker-list");
+      for (const entry of entries) {
+        const li = el(doc, "li", null, "adopt-picker-item");
+        const rowBtn = el(doc, "button", null, "adopt-picker-row");
+        rowBtn.type = "button";
+        const main = el(doc, "span", null, "adopt-picker-row-main");
+        main.appendChild(el(doc, "span", entry.title, "adopt-picker-row-title"));
+        if (entry.gameName) {
+          main.appendChild(el(doc, "span", entry.gameName, "adopt-picker-row-sub"));
+        }
+        rowBtn.appendChild(main);
+        const badges = el(doc, "span", null, "adopt-picker-row-badges");
+        if (entry.demo) badges.appendChild(el(doc, "span", "DEMO", "demo-badge"));
+        if (entry.alreadyRunning) {
+          badges.appendChild(el(doc, "span", "Running", "status-pill status-pill--active"));
+        }
+        rowBtn.appendChild(badges);
+        rowBtn.addEventListener("click", () => {
+          const res = adoptFormatIntoRing(entry.ring, f.id, me);
+          if (!res.ok) return;
+          if (res.changed) {
+            saveUpdatedRing(res.ring);
+            if (typeof ctx.onAdopt === "function") ctx.onAdopt(res.ring, f.id);
+          }
+          closePicker();
+          if (typeof ctx.navigate === "function") ctx.navigate(res.ring);
+        });
+        li.appendChild(rowBtn);
+        list.appendChild(li);
+      }
+      body.appendChild(list);
+    }
+    sheet.appendChild(body);
+
+    backdrop.addEventListener("click", closePicker);
+    const onKey = (ev) => {
+      if (ev && ev.key === "Escape") closePicker();
+    };
+    if (typeof doc.addEventListener === "function") {
+      doc.addEventListener("keydown", onKey);
+    }
+    const host = doc.body || rootEl;
+    host.appendChild(backdrop);
+    host.appendChild(sheet);
+    activePicker = { backdrop, sheet, onKey };
+  };
+
+  adoptBtn.addEventListener("click", openRingPicker);
 
   page.appendChild(el(doc, "h3", "How to run it", "section-eyebrow"));
   page.appendChild(el(doc, "p", f.howTo || "No guidance yet.", "format-howto"));

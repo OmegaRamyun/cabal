@@ -3090,3 +3090,279 @@ ul.post-comments > li.post-comment {
     bottom: calc(68px + env(safe-area-inset-bottom, 0px));
   }
 }
+
+/* ============================================================================
+ * V59 — Multi-template adopt UI (ring templates section + picker sheet)
+ * Uses V55–V57 shell tokens; mobile pickers (< 900px) render as bottom sheets
+ * consistent with the V56 node bottom sheet.
+ * ============================================================================ */
+
+.ring-templates {
+  margin: 0 0 0.9rem;
+  padding: 0.65rem 0.85rem;
+  background: var(--cabal-surface-1, rgba(20, 16, 13, 0.86));
+  border: 1px solid var(--cabal-hairline, #2a211a);
+  border-radius: var(--cabal-radius, 4px);
+}
+
+.ring-templates-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem 0.75rem;
+  margin-bottom: 0.45rem;
+}
+
+.ring-templates-head .section-eyebrow {
+  margin: 0;
+}
+
+.ring-templates-empty {
+  margin: 0;
+  color: var(--cabal-muted, #9a8f7e);
+  font-size: 0.84rem;
+}
+
+ul.ring-template-chips {
+  list-style: none !important;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+}
+
+ul.ring-template-chips > li.template-chip {
+  list-style: none !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0.15rem 0.25rem 0.15rem 0.6rem;
+  border: 1px solid var(--cabal-gold-border, rgba(201, 162, 74, 0.36));
+  border-radius: 999px;
+  background: var(--cabal-gold-soft, rgba(201, 162, 74, 0.12));
+  max-width: 100%;
+}
+
+.template-chip-link {
+  color: var(--cabal-gold-bright, #dfc073);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+  padding: 0.15rem 0.3rem 0.15rem 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.template-chip-link:hover {
+  color: var(--cabal-bone-bright, #f5ead9);
+  text-decoration: underline;
+}
+
+.template-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px !important;
+  min-height: 24px !important;
+  height: 24px;
+  padding: 0 !important;
+  margin: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--cabal-muted, #9a8f7e);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.template-chip-remove:hover {
+  background: var(--cabal-ember-soft, rgba(200, 80, 30, 0.16));
+  color: var(--cabal-danger, #f87171);
+}
+
+/* Format page actions wrap cleanly on narrow viewports */
+.template-detail .cabal-page-header-actions {
+  flex-wrap: wrap;
+}
+
+/* ---- Adopt picker modal (desktop) & bottom sheet (< 900px, V56 parity) ---- */
+.adopt-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  background: rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--cabal-duration-quick, 150ms) var(--cabal-ease, ease),
+    visibility var(--cabal-duration-quick, 150ms) var(--cabal-ease, ease);
+}
+
+.adopt-picker-backdrop.is-open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.adopt-picker-sheet {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 120;
+  width: min(30rem, calc(100vw - 2rem));
+  max-height: 75vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--cabal-panel, #14100d);
+  border: 1px solid var(--cabal-hairline-strong, #3d3026);
+  border-radius: var(--cabal-radius, 4px);
+  box-shadow: var(--cabal-shadow, 0 8px 24px rgba(0, 0, 0, 0.45));
+  color: var(--cabal-bone, #d8cfc0);
+  overflow: hidden;
+}
+
+.adopt-sheet-handle-area {
+  display: none;
+}
+
+.adopt-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--cabal-hairline, #2a211a);
+}
+
+.adopt-picker-title {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--cabal-gold, #c9a24a);
+}
+
+.adopt-picker-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 0.75rem 1rem;
+}
+
+.adopt-picker-foot {
+  padding: 0.65rem 1rem;
+  border-top: 1px solid var(--cabal-hairline, #2a211a);
+  display: flex;
+  justify-content: flex-end;
+}
+
+ul.adopt-picker-list {
+  list-style: none !important;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+ul.adopt-picker-list > li.adopt-picker-item {
+  list-style: none !important;
+  margin: 0;
+  padding: 0;
+}
+
+.adopt-picker-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.55rem 0.7rem;
+  text-align: left;
+  background: var(--cabal-surface-2, #1c1612);
+  border: 1px solid var(--cabal-hairline, #2a211a);
+  border-radius: var(--cabal-radius, 4px);
+  color: var(--cabal-bone, #d8cfc0);
+  cursor: pointer;
+}
+
+.adopt-picker-row:hover:not(:disabled) {
+  background: var(--cabal-surface-3, #251d18);
+  border-color: var(--cabal-ember, #c8501e);
+}
+
+.adopt-picker-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.adopt-picker-row-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--cabal-bone-bright, #f5ead9);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.adopt-picker-row-sub {
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--cabal-muted, #9a8f7e);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.adopt-picker-row-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 899px) {
+  .adopt-picker-sheet {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-height: 72vh;
+    transform: translateY(0);
+    border-radius: 12px 12px 0 0;
+    border-bottom: 0;
+    box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.65);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .adopt-sheet-handle-area {
+    display: flex;
+    justify-content: center;
+    padding: 0.5rem 0 0.25rem;
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .adopt-sheet-handle {
+    display: block;
+    width: 40px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--cabal-hairline-strong, #3d3026);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .adopt-picker-backdrop,
+  .adopt-picker-sheet {
+    transition: none;
+  }
+}

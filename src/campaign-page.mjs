@@ -13,6 +13,18 @@ import { ringSummary, resolveStore } from './home.mjs';
 import * as quoteComposer from './quote-composer.mjs';
 import * as nostrModel from './nostr.mjs';
 import { NAV_ICONS, showToast } from './nav.mjs';
+import {
+  FORMAT_ID_RE,
+  formatIdsForRing,
+  adoptTemplate,
+  removeTemplate,
+  ringsRunningFormat,
+  formatsForDiscovery,
+  normalizeFormat,
+  toUsageMap,
+} from './campaign-formats.mjs';
+import { loadUserFormats, mergeFormats } from './user-formats.mjs';
+import { isListable } from './discovery.mjs';
 
 export const { addMember, postedCount } = campaignModel;
 export { ringSummary };
@@ -399,6 +411,175 @@ export function removeMemberFromCampaign(campaign, handle, { by, now } = {}) {
   return next;
 }
 
+// ------------------------------------------ ring templates section (V59) ---
+
+const fmtLc = (v) => String(v ?? '').trim().toLowerCase();
+
+/** Any non-removed member of the ring may adopt a template. */
+export function canAdoptTemplate(campaign, me) {
+  if (!campaign || typeof campaign !== 'object') return false;
+  if (!me?.handle || !stripAt(me.handle)) return false;
+  if (isRemovedHandle(campaign, me.handle)) return false;
+  return (campaign.members || []).some((m) => sameHandle(m?.handle, me.handle));
+}
+
+/** Only the ring creator may remove a running template. */
+export function canRemoveTemplate(campaign, me) {
+  if (!campaign || typeof campaign !== 'object') return false;
+  if (!me?.handle || !stripAt(me.handle)) return false;
+  return isCreator(campaign, me.handle);
+}
+
+/** Confirm-step copy for removing a template (past history stays). */
+export function removeTemplateConfirmCopy(tagline) {
+  const name = String(tagline ?? '').trim() || 'this template';
+  return `Stop running "${name}" in this ring? Past posts and assists stay; the template just stops being listed as running.`;
+}
+
+/**
+ * runningTemplateChips(campaign, formats?, me?) -> chip descriptors for the
+ * ring page's Templates section. Each chip links to its format page and sets
+ * `removable: true` only for the ring creator.
+ */
+export function runningTemplateChips(campaign, formats = [], me = null) {
+  const ids = formatIdsForRing(campaign);
+  const byId = new Map();
+  for (const f of Array.isArray(formats) ? formats : []) {
+    if (f && typeof f === 'object' && typeof f.id === 'string' && f.id.trim()) {
+      byId.set(fmtLc(f.id), normalizeFormat(f));
+    }
+  }
+  const removable = canRemoveTemplate(campaign, me);
+  return ids.map((id) => {
+    const found = byId.get(id);
+    return {
+      id,
+      tagline: (found && found.tagline) || id,
+      href: `#/format/${encodeURIComponent(id)}`,
+      removable,
+      demo: found?.demo === true,
+    };
+  });
+}
+
+/**
+ * pickableFormatsForRing(campaign, { formats, userFormats, rings, usage })
+ * -> formats the user can browse/adopt from inside a ring: listable formats
+ * (at least one listable ring runs them or positive relay usage) PLUS the
+ * user's own formats. Non-running formats come before already-running ones.
+ */
+export function pickableFormatsForRing(
+  campaign,
+  { formats = [], userFormats = [], rings = [], usage = null } = {},
+) {
+  const running = new Set(formatIdsForRing(campaign));
+  const listableRings = (Array.isArray(rings) ? rings : []).filter(isListable);
+  const usageMap = toUsageMap(usage);
+  const userIds = new Set(
+    (Array.isArray(userFormats) ? userFormats : [])
+      .filter((f) => f && typeof f === 'object' && typeof f.id === 'string' && f.id.trim())
+      .map((f) => fmtLc(f.id)),
+  );
+  const merged = mergeFormats(formats, userFormats);
+  const admitted = merged.filter((f) => {
+    const id = fmtLc(f?.id);
+    if (!FORMAT_ID_RE.test(id)) return false;
+    if (userIds.has(id)) return true;
+    const localCount = ringsRunningFormat(id, listableRings).length;
+    const relayCount = usageMap && usageMap.has(id) ? usageMap.get(id) : 0;
+    return localCount >= 1 || relayCount >= 1;
+  });
+  const ordered = formatsForDiscovery(admitted, { usage, rings: listableRings });
+  const available = [];
+  const already = [];
+  for (const raw of ordered) {
+    const f = normalizeFormat(raw);
+    const id = fmtLc(f.id);
+    const entry = {
+      format: f,
+      id,
+      tagline: f.tagline || id,
+      description: f.description || '',
+      alreadyRunning: running.has(id),
+      isOwn: userIds.has(id),
+      demo: f.demo === true,
+    };
+    if (entry.alreadyRunning) already.push(entry);
+    else available.push(entry);
+  }
+  return [...available, ...already];
+}
+
+/**
+ * adoptTemplateInRing(campaign, formatId, me) -> { ok, campaign, changed, reason? }.
+ * Enforces member-only adoption and delegates to V58's adoptTemplate.
+ */
+export function adoptTemplateInRing(campaign, formatId, me) {
+  if (!campaign || typeof campaign !== 'object') {
+    return { ok: false, campaign, changed: false, reason: 'invalid-ring' };
+  }
+  const id = fmtLc(formatId);
+  if (!FORMAT_ID_RE.test(id)) {
+    return { ok: false, campaign, changed: false, reason: 'invalid-format' };
+  }
+  if (!canAdoptTemplate(campaign, me)) {
+    return { ok: false, campaign, changed: false, reason: 'not-a-member' };
+  }
+  const before = formatIdsForRing(campaign);
+  const updated = adoptTemplate(campaign, id);
+  return { ok: true, campaign: updated, changed: !before.includes(id) };
+}
+
+/**
+ * removeTemplateFromRing(campaign, formatId, me) -> { ok, campaign, changed, reason? }.
+ * Enforces creator-only removal and delegates to V58's removeTemplate.
+ * Past posts and assists are untouched.
+ */
+export function removeTemplateFromRing(campaign, formatId, me) {
+  if (!campaign || typeof campaign !== 'object') {
+    return { ok: false, campaign, changed: false, reason: 'invalid-ring' };
+  }
+  const id = fmtLc(formatId);
+  if (!FORMAT_ID_RE.test(id)) {
+    return { ok: false, campaign, changed: false, reason: 'invalid-format' };
+  }
+  if (!canRemoveTemplate(campaign, me)) {
+    return { ok: false, campaign, changed: false, reason: 'not-creator' };
+  }
+  const before = formatIdsForRing(campaign);
+  const updated = removeTemplate(campaign, id);
+  return { ok: true, campaign: updated, changed: before.includes(id) };
+}
+
+let cachedSeedFormats = null;
+let cachedStaticRings = null;
+
+async function fetchSeedFormatsOnce() {
+  if (cachedSeedFormats) return cachedSeedFormats;
+  if (typeof globalThis.fetch !== 'function') return [];
+  try {
+    const res = await globalThis.fetch('data/formats.json');
+    const data = await res.json();
+    cachedSeedFormats = Array.isArray(data?.formats) ? data.formats : [];
+  } catch {
+    cachedSeedFormats = [];
+  }
+  return cachedSeedFormats;
+}
+
+async function fetchStaticRingsOnce() {
+  if (cachedStaticRings) return cachedStaticRings;
+  if (typeof globalThis.fetch !== 'function') return [];
+  try {
+    const res = await globalThis.fetch('data/campaigns.json');
+    const data = await res.json();
+    cachedStaticRings = Array.isArray(data?.campaigns) ? data.campaigns : [];
+  } catch {
+    cachedStaticRings = [];
+  }
+  return cachedStaticRings;
+}
+
 // ----------------------------------------------------------------- DOM ---
 
 function esc(s) {
@@ -420,6 +601,8 @@ function syncCampaignToStore(store, campaign, updated) {
   if (updated.removedMembers) campaign.removedMembers = updated.removedMembers;
   if (updated.posts) campaign.posts = updated.posts;
   if (updated.anchorPost) campaign.anchorPost = updated.anchorPost;
+  if (Array.isArray(updated.formatIds)) campaign.formatIds = updated.formatIds;
+  delete campaign.formatId;
 }
 
 function renderCommentsHtml(post) {
@@ -503,8 +686,41 @@ export function mount(rootEl, ctx) {
   const campaign = ctx && ctx.campaign;
   let mountedComposers = [];
   let activeTab = normalizeRingTab(ctx?.initialTab);
+  let loadedSeedFormats = Array.isArray(ctx?.formats) ? ctx.formats : cachedSeedFormats || [];
+  let loadedStaticRings = Array.isArray(ctx?.rings) ? ctx.rings : cachedStaticRings || [];
+  let activePicker = null;
+  let mounted = true;
+
+  function closeTemplatePicker() {
+    if (!activePicker) return;
+    const { backdrop, sheet, onKey } = activePicker;
+    activePicker = null;
+    if (onKey && rootEl.ownerDocument && typeof rootEl.ownerDocument.removeEventListener === 'function') {
+      rootEl.ownerDocument.removeEventListener('keydown', onKey);
+    }
+    if (typeof backdrop.remove === 'function') backdrop.remove();
+    if (typeof sheet.remove === 'function') sheet.remove();
+  }
+
+  function currentUserFormats() {
+    return Array.isArray(ctx?.userFormats) ? ctx.userFormats : loadUserFormats();
+  }
+
+  function allKnownFormats() {
+    return mergeFormats(loadedSeedFormats, currentUserFormats());
+  }
+
+  function allKnownRings() {
+    const local = Array.isArray(store.campaigns) ? store.campaigns : [];
+    const byId = new Map();
+    for (const r of loadedStaticRings) if (r && r.id) byId.set(r.id, r);
+    for (const r of local) if (r && r.id) byId.set(r.id, r);
+    if (campaign && campaign.id) byId.set(campaign.id, campaign);
+    return [...byId.values()];
+  }
 
   function teardownComposers() {
+    closeTemplatePicker();
     for (const h of mountedComposers) {
       if (h && typeof h.destroy === 'function') h.destroy();
     }
@@ -610,6 +826,27 @@ export function mount(rootEl, ctx) {
       ? `${relayConfig.relays.length} relay${relayConfig.relays.length === 1 ? '' : 's'} configured`
       : 'Local only \u00b7 relays not configured';
 
+    const canAdopt = canAdoptTemplate(campaign, me);
+    const templateChips = runningTemplateChips(campaign, allKnownFormats(), me);
+    const templatesHtml = `<section class="ring-templates" aria-label="Ring templates">
+          <div class="ring-templates-head">
+            <h3 class="section-eyebrow">Templates</h3>
+            ${canAdopt ? '<button type="button" id="ring-adopt-template-btn" class="btn-sm">Browse &amp; adopt template</button>' : ''}
+          </div>
+          ${
+            templateChips.length
+              ? `<ul class="ring-template-chips">${templateChips
+                  .map(
+                    (c) => `<li class="template-chip" data-template-id="${esc(c.id)}">
+                      <a class="template-chip-link" href="${esc(c.href)}" data-open-format="${esc(c.id)}">${esc(c.tagline)}</a>
+                      ${c.removable ? `<button type="button" class="template-chip-remove" data-remove-template="${esc(c.id)}" data-template-tagline="${esc(c.tagline)}" aria-label="Remove ${esc(c.tagline)}">&times;</button>` : ''}
+                    </li>`,
+                  )
+                  .join('')}</ul>`
+              : '<p class="ring-templates-empty">No templates running yet.</p>'
+          }
+        </section>`;
+
     rootEl.innerHTML = `
       <section class="campaign-page">
         <header class="cabal-page-header ring-header">
@@ -634,6 +871,8 @@ export function mount(rootEl, ctx) {
             </button>
           </div>
         </header>
+
+        ${templatesHtml}
 
         ${iAmRemoved ? `<p class="ring-removed-notice">${esc(REMOVED_NOTICE)}</p>` : ''}
 
@@ -924,6 +1163,123 @@ export function mount(rootEl, ctx) {
       });
     });
 
+    // Wire template chip navigation, creator-only removal, and browse/adopt picker.
+    rootEl.querySelectorAll('[data-open-format]').forEach((link) => {
+      link.addEventListener('click', (e) => {
+        if (typeof ctx?.navigate === 'function') {
+          e.preventDefault();
+          ctx.navigate('format', { formatId: link.dataset.openFormat });
+        }
+      });
+    });
+
+    rootEl.querySelectorAll('[data-remove-template]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const formatId = btn.dataset.removeTemplate;
+        const tagline = btn.dataset.templateTagline || formatId;
+        if (!canRemoveTemplate(campaign, me)) return;
+        const ok =
+          typeof globalThis.confirm === 'function'
+            ? globalThis.confirm(removeTemplateConfirmCopy(tagline))
+            : false;
+        if (!ok) return;
+        const res = removeTemplateFromRing(campaign, formatId, me);
+        if (!res.ok || !res.changed) return;
+        syncCampaignToStore(store, campaign, res.campaign);
+        if (typeof ctx?.onTemplateRemoved === 'function') {
+          ctx.onTemplateRemoved({ campaignId: campaign.id, formatId, campaign: res.campaign });
+        }
+        showToast('Template removed', { doc });
+        render();
+      });
+    });
+
+    const adoptTemplateBtn = rootEl.querySelector('#ring-adopt-template-btn');
+    if (adoptTemplateBtn) {
+      adoptTemplateBtn.addEventListener('click', () => {
+        closeTemplatePicker();
+        const entries = pickableFormatsForRing(campaign, {
+          formats: loadedSeedFormats,
+          userFormats: currentUserFormats(),
+          rings: allKnownRings(),
+          usage: ctx?.usage || null,
+        });
+
+        const backdrop = doc.createElement('div');
+        backdrop.className = 'adopt-picker-backdrop is-open';
+        const sheet = doc.createElement('div');
+        sheet.className = 'adopt-picker-sheet is-open';
+        sheet.setAttribute('role', 'dialog');
+        sheet.setAttribute('aria-modal', 'true');
+        sheet.setAttribute('aria-label', 'Adopt a template');
+
+        const listHtml = entries.length
+          ? `<ul class="adopt-picker-list">${entries
+              .map(
+                (item) => `<li class="adopt-picker-item">
+                  <button type="button" class="adopt-picker-row" data-pick-format="${esc(item.id)}" ${item.alreadyRunning ? 'disabled' : ''}>
+                    <span class="adopt-picker-row-main">
+                      <span class="adopt-picker-row-title">${esc(item.tagline)}</span>
+                      ${item.description ? `<span class="adopt-picker-row-sub">${esc(item.description)}</span>` : ''}
+                    </span>
+                    <span class="adopt-picker-row-badges">
+                      ${item.isOwn ? '<span class="status-pill">Yours</span>' : ''}
+                      ${item.demo ? '<span class="demo-badge">DEMO</span>' : ''}
+                      ${item.alreadyRunning ? '<span class="status-pill status-pill--active">Running</span>' : ''}
+                    </span>
+                  </button>
+                </li>`,
+              )
+              .join('')}</ul>`
+          : '<p class="empty-state">No templates available yet. Create one to run it in this ring.</p>';
+
+        sheet.innerHTML = `
+          <div class="adopt-sheet-handle-area"><span class="adopt-sheet-handle"></span></div>
+          <div class="adopt-picker-head">
+            <h3 class="adopt-picker-title">Adopt a template</h3>
+            <button type="button" class="btn-sm adopt-picker-close">Close</button>
+          </div>
+          <div class="adopt-picker-body">
+            ${listHtml}
+          </div>
+          <div class="adopt-picker-foot">
+            <a class="section-head-link" href="#/campaigns/new">New campaign template</a>
+          </div>
+        `;
+
+        sheet.querySelector('.adopt-sheet-handle-area')?.addEventListener('click', closeTemplatePicker);
+        sheet.querySelector('.adopt-picker-close')?.addEventListener('click', closeTemplatePicker);
+        sheet.querySelector('.adopt-picker-foot a')?.addEventListener('click', closeTemplatePicker);
+        sheet.querySelectorAll('[data-pick-format]').forEach((rowBtn) => {
+          rowBtn.addEventListener('click', () => {
+            const fmtId = rowBtn.dataset.pickFormat;
+            const res = adoptTemplateInRing(campaign, fmtId, me);
+            if (!res.ok) return;
+            if (res.changed) {
+              syncCampaignToStore(store, campaign, res.campaign);
+              if (typeof ctx?.onTemplateAdopted === 'function') {
+                ctx.onTemplateAdopted({ campaignId: campaign.id, formatId: fmtId, campaign: res.campaign });
+              }
+              showToast('Template adopted', { doc });
+            }
+            closeTemplatePicker();
+            render();
+          });
+        });
+
+        backdrop.addEventListener('click', closeTemplatePicker);
+        const onKey = (ev) => {
+          if (ev && ev.key === 'Escape') closeTemplatePicker();
+        };
+        if (typeof doc.addEventListener === 'function') {
+          doc.addEventListener('keydown', onKey);
+        }
+        (doc.body || rootEl).appendChild(backdrop);
+        (doc.body || rootEl).appendChild(sheet);
+        activePicker = { backdrop, sheet, onKey };
+      });
+    }
+
     // Wire Join form.
     const joinForm = rootEl.querySelector('#ring-join-form');
     if (joinForm) {
@@ -948,4 +1304,14 @@ export function mount(rootEl, ctx) {
   }
 
   render();
+
+  // Best-effort browser hydrate when caller did not inject formats/rings.
+  if (!Array.isArray(ctx?.formats) && !cachedSeedFormats && typeof globalThis.fetch === 'function') {
+    Promise.all([fetchSeedFormatsOnce(), fetchStaticRingsOnce()]).then(([fmts, statics]) => {
+      if (!mounted) return;
+      loadedSeedFormats = fmts;
+      if (!Array.isArray(ctx?.rings)) loadedStaticRings = statics;
+      if (rootEl.isConnected !== false) render();
+    });
+  }
 }
