@@ -36,6 +36,12 @@ export const INTRO_PAGES = [
         ],
       },
       {
+        heading: "Rings and Campaigns",
+        paragraphs: [
+          "Two different things. Your Rings are your network: the small group of devs who boost each other over time. Campaigns are the formats that are catching on, the meme templates any ring can pick up and run in its own words.",
+        ],
+      },
+      {
         heading: "What it does today, plainly",
         paragraphs: [
           "Today Cabal helps you start a ring, add posts from any platform, assist a ringmate's post, and leave a receipt of what you did. How a ring stays current across people is covered on the theory page, including what is public and what is not.",

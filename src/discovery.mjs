@@ -8,6 +8,7 @@
 
 import { jaccard } from './match.mjs';
 import { postedCount, latestActivity, relativeTime, initials, avatarHue } from './campaign.mjs';
+import { formatsForDiscovery, usageLabel, normalizeFormat } from './campaign-formats.mjs';
 
 export { postedCount };
 
@@ -116,8 +117,33 @@ function rowEl(doc, campaign, navigate) {
   return li;
 }
 
+// V45: the Campaigns view lists FORMATS (meme templates any ring can run).
+function formatRowEl(doc, format, usage, navigateFormat) {
+  const f = normalizeFormat(format);
+  const li = el(doc, "li", null, "discovery-row format-row");
+  const btn = el(doc, "button", null, "discovery-row-btn");
+  btn.type = "button";
+  const used = usageLabel(f.id, usage); // null without real usage data
+  btn.appendChild(el(doc, "span", f.tagline, "discovery-row-label"));
+  if (f.description) btn.appendChild(el(doc, "span", ` — ${f.description}`, "format-row-desc"));
+  if (used) btn.appendChild(el(doc, "span", ` — ${used}`, "format-usage"));
+  if (f.demo) btn.appendChild(el(doc, "span", "DEMO", "demo-badge"));
+  btn.addEventListener("click", () => {
+    if (typeof navigateFormat === "function") navigateFormat(format);
+  });
+  li.appendChild(btn);
+  return li;
+}
+
 /**
- * mount(rootEl, ctx) ctx: { myTags, campaigns, navigate }
+ * mount(rootEl, ctx) ctx: { myTags, campaigns, navigate, formats?,
+ * sortByUsage?, rings?, navigateFormat? }
+ * V45: this view is "Campaigns" — the template list. When ctx.formats is
+ * given, a "Campaigns" section lists them in formatsForDiscovery order;
+ * ctx.sortByUsage (V46 shape: Map id -> distinct-ring count) puts most-used
+ * first and shows "used by N rings". Until V46 lands there is no usage, so
+ * the order falls back to member-count order. The ring-discovery sections
+ * below stay as "rings you could join".
  * Renders two sections, "Similar games" and "Popular". Each row shows
  * game name, title, member count, contributed ringmates, latest activity, tags, and a DEMO badge
  * when demo. Clicking a row calls navigate(campaign) — the caller opens
@@ -129,6 +155,18 @@ export function mount(rootEl, ctx = {}) {
   const similar = similarCampaigns(ctx.myTags, campaigns);
   const popular = popularCampaigns(campaigns);
   rootEl.textContent = "";
+
+  if (Array.isArray(ctx.formats)) {
+    rootEl.appendChild(el(doc, "h2", "Campaigns"));
+    rootEl.appendChild(el(doc, "p",
+      "Formats that are catching on. Any ring can pick one up and run it in its own words.",
+      "view-lede"));
+    const fmts = formatsForDiscovery(ctx.formats, { usage: ctx.sortByUsage, rings: ctx.rings });
+    const fmtList = el(doc, "ul", null, "discovery-formats");
+    if (!fmts.length) fmtList.appendChild(el(doc, "li", "No campaign formats yet.", "empty-state"));
+    for (const f of fmts) fmtList.appendChild(formatRowEl(doc, f, ctx.sortByUsage, ctx.navigateFormat));
+    rootEl.appendChild(fmtList);
+  }
 
   rootEl.appendChild(el(doc, "h2", "Similar games"));
   const simList = el(doc, "ul", null, "discovery-similar");
