@@ -24,6 +24,15 @@ word 3-grams, computed locally in the browser, no model, no download, no
 network. Demo data is fictional and flagged `demo: true` with a DEMO
 badge everywhere it appears; `src/demo.mjs` seeds it on first load only.
 
+## Versioning
+
+`version.json` at the repo root is the app version (`{ version,
+updatedAt }`). Bump the patch number on EVERY merge to main, and set
+`updatedAt` to the merge time (UTC). The auto-updater (`src/updater.mjs`)
+polls it; a stale version.json means users never see the update banner.
+A minor/major bump is a deliberate decision, recorded in the task that
+makes it — the default is patch +1 per merge.
+
 ## File ownership
 
 One task = one file set (see `tasks/INDEX.md`). Only the coordinator
