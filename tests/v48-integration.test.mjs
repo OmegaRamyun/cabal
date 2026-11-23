@@ -78,6 +78,11 @@ describe('V48 usage seam (V46 shape into discovery)', () => {
     assert.equal(usageLabel('fmt_algoigno', usage), 'used by 2 rings');
     assert.equal(usageLabel('fmt_weekship', usage), null);
   });
+  test('usageLabel never shows "used by 0 rings" (assists but no campaign event)', () => {
+    // V46 shape with assists but an empty rings set: count 0 must stay hidden.
+    const usage = new Map([['fmt_algoigno', { rings: new Set(), assists: 3 }]]);
+    assert.equal(usageLabel('fmt_algoigno', usage), null);
+  });
 });
 
 describe('V48 format tag on Nostr events', () => {

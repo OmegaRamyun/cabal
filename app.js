@@ -375,10 +375,12 @@ let usageNoteCache = null;
 
 async function loadFormatUsage(formatIds) {
   if (usageCache) return usageCache;
+  const configured = nostr.loadRelays(globalThis.localStorage).relays;
+  const relays = configured.length ? configured : [...nostr.DEFAULT_RELAYS];
+  // V48 verifier fix: the one-off client is closed in `finally` — it used
+  // to leak its WebSockets for the life of the page.
+  const client = nostr.createRelayClient({ relays });
   try {
-    const configured = nostr.loadRelays(globalThis.localStorage).relays;
-    const relays = configured.length ? configured : [...nostr.DEFAULT_RELAYS];
-    const client = nostr.createRelayClient({ relays });
     const res = await popularity.queryFormatUsage(client, formatIds, { timeoutMs: 6000 });
     usageCache = res.usage;
     usageNoteCache =
@@ -392,6 +394,8 @@ async function loadFormatUsage(formatIds) {
     usageCache = new Map();
     usageNoteCache = "Couldn't reach the relays — usage counts hidden.";
     return usageCache;
+  } finally {
+    try { client.close(); } catch { /* ignore */ }
   }
 }
 
