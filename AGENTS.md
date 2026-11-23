@@ -16,8 +16,8 @@ Vanilla ES modules, no bundler. Each feature is one `src/<name>.mjs` that
 exports pure functions and a `mount(rootEl)` for its UI. `index.html`
 loads the modules; `app.js` holds the module registry
 (`window.Cabal.modules.<name>`). No module touches another module's DOM.
-Transformers.js (embeddings) loads lazily from CDN, only when the user
-opts in — never on first load.
+No AI in the app: the similarity gate is SimHash + word 3-grams, computed
+locally in the browser, no model, no download, no network.
 
 ## File ownership
 

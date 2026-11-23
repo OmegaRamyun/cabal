@@ -10,7 +10,8 @@ merges. Never edit another task's files.
 | T01 | App shell, layout, module registry | `index.html`, `style.css`, `app.js` | done | — | Sonnet |
 | T02 | Intent composers (X / Bluesky / Threads / Reddit) | `src/intents.mjs`, `tests/t02.test.mjs` | done | — | Sonnet |
 | T03 | Similarity gate — lexical | `src/similarity.mjs`, `tests/t03.test.mjs` | done | — | Sonnet |
-| T04 | Similarity gate — MiniLM embeddings (opt-in) | `src/embeddings.mjs`, `tests/t04.test.mjs` | done | — | Hydrogen |
+| T04 | Similarity gate — MiniLM embeddings (opt-in) | `src/embeddings.mjs`, `tests/t04.test.mjs` | removed (T11) | — | Hydrogen |
+| T11 | Remove AI embeddings, hash gate in composer (warnings only) | `src/similarity.mjs`, `tests/t03.test.mjs`, `tests/t01.test.mjs`, `app.js`, `index.html`, `src/checklist.mjs`, `tasks/T03.md`, `tasks/T04.md` | done | — | — |
 | T05 | Matchmaking directory + match score | `directory/`, `schemas/directory.schema.json`, `src/match.mjs`, `tests/t05.test.mjs` | done | — | Sonnet |
 | T06 | Discord #rings bridge | `src/discord.mjs`, `tests/t06.test.mjs` | done | — | Hydrogen |
 | T07 | Kickstarter planner + referral tags | `src/kickstarter.mjs`, `tests/t07.test.mjs` | done | — | Sonnet |
