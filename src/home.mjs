@@ -427,8 +427,9 @@ export function mount(rootEl, ctx) {
           ${turnPosts.length ? turnPosts.map(turnPostCardHtml).join('') : '<p class="empty-state">No new posts to assist.</p>'}
         </section>
         <section class="your-rings">
-          <h3>Your rings</h3>
-          ${rings.length ? rings.map((c) => campaignCardHtml(c)).join('') : '<p class="empty-state">No campaigns yet.</p>'}
+          <h3>My Rings</h3>
+          <p class="view-lede">Your network: the devs who boost each other&rsquo;s posts over time. Looking for a format to run? See <a href="#/campaigns">Campaigns</a>.</p>
+          ${rings.length ? rings.map((c) => campaignCardHtml(c)).join('') : '<p class="empty-state">No rings yet.</p>'}
         </section>
       </section>`;
 

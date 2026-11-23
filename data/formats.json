@@ -1,0 +1,36 @@
+{
+  "formats": [
+    {
+      "id": "fmt_algoigno",
+      "tagline": "MY GAME IS GOOD THE ALGORITHM JUST IGNORES ME",
+      "description": "A deadpan complaint format: one dev states, flatly, that their game is good and the feed does not care. The joke is the gap between the confidence and the view count.",
+      "howTo": "Pick one real, specific thing about your own game that you are proud of and say it plainly next to the tagline, in your own voice. Keep it to one post. Let ringmates answer in their own words and their own jokes, staggered over days rather than all at once. If you are posting as part of a ring, say so in the post.",
+      "examples": [
+        { "url": "https://example.com/demo/algorithm-ignores-me-1", "platform": "x", "note": "Demo example: a deadpan single-post version" },
+        { "url": "https://example.com/demo/algorithm-ignores-me-2", "platform": "bluesky", "note": "Demo example: a reply-chain version" }
+      ],
+      "tags": ["meme", "self-deprecating", "any-genre"],
+      "demo": true
+    },
+    {
+      "id": "fmt_weekship",
+      "tagline": "WHAT WE SHIPPED THIS WEEK",
+      "description": "A build-in-public rhythm: once a week, each ringmate posts the one thing that changed in their game since last week.",
+      "howTo": "Choose a fixed day for your ring. Each dev posts one change they actually made, in their own words, with a screenshot or clip if they have one. Skipped weeks are fine; there is no streak to keep. Mention the ring in the post so readers know why several devs post on the same day.",
+      "examples": [
+        { "url": "https://example.com/demo/weekly-ship-1", "platform": "x", "note": "Demo example: a one-screenshot weekly update" }
+      ],
+      "tags": ["devlog", "weekly", "build-in-public"],
+      "demo": true
+    },
+    {
+      "id": "fmt_oneclip1",
+      "tagline": "ONE MOMENT, ONE LINE",
+      "description": "A short gameplay-clip format: a single moment from your game and one line about it. No trailer, no logo sting.",
+      "howTo": "Capture one moment that shows what the game feels like, a few seconds long. Add one line in your own voice, with no pitch and no call to action beyond the game's name. Ringmates share it with their own take, not a copy of yours, and a note that they are in a ring together.",
+      "examples": [],
+      "tags": ["clip", "gameplay", "short"],
+      "demo": true
+    }
+  ]
+}
