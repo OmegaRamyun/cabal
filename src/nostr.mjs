@@ -1,12 +1,15 @@
-// V41 — Nostr sync for the sustained ring (spec: cabal-bench/redesign-sustained-ring.md §16).
+// V43b — Nostr sync for the sustained ring with shared campaign keypair + removal
+// (spec: cabal-bench/redesign-sustained-ring.md §16, §17).
 // Pure functions + a vanilla-WebSocket relay client + mount() for the sync panel.
 // No npm deps, no backend. DOM only in mount().
 //
-// PRIVACY / KEY RULES (hard): the private key never leaves the browser —
-// it is never logged, never put in a URL or link payload, never sent to a
-// relay. Only signed events (which carry the public key) are published.
-// Anything on a public relay is public, and Nostr events cannot be reliably
-// deleted.
+// KEY / PRIVACY RULES (hard):
+//  - The keypair belongs to the CAMPAIGN, never the user. No accounts, no per-user
+//    vault, no key onboarding, no nsec shown to the user.
+//  - The campaign `key` lives on the campaign object (localStorage) and in the invite
+//    link URL fragment ONLY. It is NEVER published in any relay event, NEVER put in a
+//    URL query param, NEVER logged, NEVER in data/campaigns.json or campaigns.atom.
+//  - Anything on a public relay is public, and Nostr events cannot be reliably deleted.
 
 import {
   getPublicKey, generateSecretKey, isValidSecretKey, sign, verify, sha256,
@@ -16,7 +19,6 @@ import {
 export const KIND_CAMPAIGN = 30078;
 export const KIND_NOTE = 1;
 export const STORAGE_KEYS = Object.freeze({
-  key: "cabal.v2.nostr.key",
   relays: "cabal.v2.relays",
 });
 
@@ -27,6 +29,10 @@ export const DEFAULT_RELAYS = Object.freeze([
 ]);
 
 export const PRIVACY_LINE = "Anything on a public relay is public, and it can't be reliably deleted.";
+
+export const COPY = Object.freeze({
+  privacy: PRIVACY_LINE,
+});
 
 // ---------------------------------------------------------------------------
 // bech32 (BIP-173 checksum, NIP-19 usage: no 90-char limit)
@@ -85,16 +91,9 @@ export function bech32Decode(str) {
 }
 
 export const npubEncode = (pubHex) => bech32Encode("npub", hexToBytes(pubHex));
-export const nsecEncode = (skHex) => bech32Encode("nsec", hexToBytes(skHex));
 export function npubDecode(npub) {
   const d = bech32Decode(npub);
   return d && d.hrp === "npub" && d.bytes.length === 32 ? bytesToHex(d.bytes) : null;
-}
-export function nsecDecode(nsec) {
-  const d = bech32Decode(nsec);
-  if (!d || d.hrp !== "nsec" || d.bytes.length !== 32) return null;
-  const hex = bytesToHex(d.bytes);
-  return isValidSecretKey(hex) ? hex : null;
 }
 
 /** NIP-19 naddr for a campaign: the short pointer a #c= link can carry. */
@@ -129,7 +128,78 @@ export function naddrDecode(str) {
 }
 
 // ---------------------------------------------------------------------------
-// Keys
+// Campaign keypair (shared per campaign; invisible to users)
+// ---------------------------------------------------------------------------
+// Seam with V43a: `campaign.key` is an opaque 64-char lowercase hex secp256k1
+// secret key stored on the campaign object (persisted in cabal.v2.campaigns).
+//  - On create: pass `key: generateCampaignKey().key` to createCampaign().
+//  - On join via invite link: the fragment carries the key, stored on campaign.key.
+//  - On discovery (public list / naddr without key): campaign.key is absent (read-only).
+
+export function isValidCampaignKey(key) {
+  return typeof key === "string" && /^[0-9a-f]{64}$/.test(key) && isValidSecretKey(key);
+}
+
+export function hasCampaignKey(campaign) {
+  return Boolean(campaign && isValidCampaignKey(campaign.key));
+}
+
+/** Generate a fresh campaign keypair: { key, pubkey }. Pure; never touches storage. */
+export function generateCampaignKey() {
+  const key = generateSecretKey();
+  return { key, pubkey: getPublicKey(key) };
+}
+
+/**
+ * Derive { key, pubkey } from campaign.key when valid, or generate a fresh
+ * keypair when missing. Pure: never mutates `campaign`.
+ */
+export function campaignKeypair(campaign) {
+  if (hasCampaignKey(campaign)) {
+    return { key: campaign.key, pubkey: getPublicKey(campaign.key) };
+  }
+  return generateCampaignKey();
+}
+
+/** Authoritative pubkey for a campaign: derived from campaign.key, else campaign.nostr.pubkey. */
+export function campaignPubkey(campaign) {
+  if (hasCampaignKey(campaign)) return getPublicKey(campaign.key);
+  return typeof campaign?.nostr?.pubkey === "string" && /^[0-9a-f]{64}$/.test(campaign.nostr.pubkey)
+    ? campaign.nostr.pubkey
+    : null;
+}
+
+/**
+ * Short-link URL fragment for a campaign (#c=<naddr>[&k=<key>]).
+ * The key lives in the URL fragment ONLY — never in a query string (?k=...).
+ */
+export function campaignLinkFragment(campaign, relays = []) {
+  const pubkey = campaignPubkey(campaign);
+  if (!pubkey || !campaign?.id) throw new Error("campaignLinkFragment needs a campaign id and pubkey");
+  const naddr = naddrEncode({ identifier: `cabal:${campaign.id}`, pubkey, relays });
+  return hasCampaignKey(campaign) ? `#c=${naddr}&k=${campaign.key}` : `#c=${naddr}`;
+}
+
+/**
+ * Parse a #c=<naddr>[&k=<key>] fragment (or full URL). Reads ONLY the fragment
+ * after `#`, ignoring any query string so a key in `?` is never accepted.
+ */
+export function parseCampaignLinkFragment(input) {
+  if (typeof input !== "string") return null;
+  const hashIdx = input.indexOf("#");
+  const frag = hashIdx >= 0 ? input.slice(hashIdx + 1) : input;
+  const params = new URLSearchParams(frag);
+  const naddr = params.get("c");
+  if (!naddr) return null;
+  const decoded = naddrDecode(naddr);
+  if (!decoded || !decoded.identifier.startsWith("cabal:")) return null;
+  const rawKey = params.get("k");
+  const key = isValidCampaignKey(rawKey) ? rawKey : null;
+  return { naddr, decoded, campaignId: decoded.identifier.slice(6), pubkey: decoded.pubkey, relays: decoded.relays, key };
+}
+
+// ---------------------------------------------------------------------------
+// Storage helpers (relays only — no per-user key store)
 // ---------------------------------------------------------------------------
 function storageOf(storage) {
   if (storage) return storage;
@@ -140,78 +210,8 @@ function storageOf(storage) {
 const readJson = (st, k, fb) => { try { const r = st.getItem(k); return r == null ? fb : JSON.parse(r); } catch { return fb; } };
 const writeJson = (st, k, v) => { try { st.setItem(k, JSON.stringify(v)); return true; } catch { return false; } };
 
-/** Make a keypair. Pure of storage: caller decides what to persist. */
-export function generateKeypair() {
-  const sk = generateSecretKey();
-  return { sk, pk: getPublicKey(sk), nsec: nsecEncode(sk), npub: npubEncode(getPublicKey(sk)) };
-}
-
-/** nsec (bech32) or 64-char hex -> keypair, or null when invalid. */
-export function importKey(input) {
-  const s = String(input ?? "").trim();
-  const sk = s.startsWith("nsec1") ? nsecDecode(s) : (/^[0-9a-f]{64}$/i.test(s) && isValidSecretKey(s.toLowerCase()) ? s.toLowerCase() : null);
-  if (!sk) return null;
-  const pk = getPublicKey(sk);
-  return { sk, pk, nsec: nsecEncode(sk), npub: npubEncode(pk) };
-}
-
-/**
- * Key vault over a storage adapter. State machine:
- *   none -> pending (generated, nsec not yet confirmed saved) -> ready
- *   import goes straight to ready (the user already holds that nsec).
- * Signing is refused until the key is `ready`.
- * Stored record: { sk, confirmed, createdAt } under cabal.v2.nostr.key.
- * It is never exported by any function except `revealOnce`.
- */
-export function createKeyVault(storage) {
-  const st = storageOf(storage);
-  const load = () => {
-    const r = readJson(st, STORAGE_KEYS.key, null);
-    return r && typeof r.sk === "string" && isValidSecretKey(r.sk) ? r : null;
-  };
-  return {
-    status() {
-      const r = load();
-      if (!r) return { state: "none" };
-      return { state: r.confirmed ? "ready" : "pending", npub: npubEncode(getPublicKey(r.sk)), pk: getPublicKey(r.sk) };
-    },
-    /** Generate + store; returns the nsec for the one-time reveal. */
-    generate() {
-      const kp = generateKeypair();
-      writeJson(st, STORAGE_KEYS.key, { sk: kp.sk, confirmed: false, createdAt: new Date().toISOString() });
-      return { nsec: kp.nsec, npub: kp.npub };
-    },
-    /** The once-only reveal: allowed only while unconfirmed. */
-    revealOnce() {
-      const r = load();
-      return r && !r.confirmed ? nsecEncode(r.sk) : null;
-    },
-    /** User ticked "I saved it". */
-    confirmSaved() {
-      const r = load();
-      if (!r) return false;
-      return writeJson(st, STORAGE_KEYS.key, { ...r, confirmed: true });
-    },
-    /** Paste an nsec to restore. Returns { ok, npub } or { ok:false, error }. */
-    import(input) {
-      const kp = importKey(input);
-      if (!kp) return { ok: false, error: "That doesn't look like a valid nsec. It should start with nsec1." };
-      writeJson(st, STORAGE_KEYS.key, { sk: kp.sk, confirmed: true, createdAt: new Date().toISOString() });
-      return { ok: true, npub: kp.npub };
-    },
-    /** Sign an unsigned event template. Throws unless the key is confirmed. */
-    async signEvent(template) {
-      const r = load();
-      if (!r || !r.confirmed) throw new Error("No confirmed Cabal key — finish key setup first.");
-      return signEvent(template, r.sk);
-    },
-    /** Forget the key on this browser. Without a backup nsec the identity is gone. */
-    forget() { try { st.removeItem(STORAGE_KEYS.key); } catch { /* ignore */ } },
-  };
-}
-
 // ---------------------------------------------------------------------------
-// Events (NIP-01)
+// Events (NIP-01) — all signed with the CAMPAIGN key
 // ---------------------------------------------------------------------------
 export const campaignAddress = (pubkey, campaignId) => `${KIND_CAMPAIGN}:${pubkey}:cabal:${campaignId}`;
 const nowSec = () => Math.floor(Date.now() / 1000);
@@ -221,7 +221,7 @@ export async function eventId(ev) {
   return bytesToHex(await sha256(ser));
 }
 
-/** template {kind,tags,content,created_at?} + sk -> signed event. */
+/** template {kind,tags,content,created_at?} + campaign key -> signed event. */
 export async function signEvent(template, skHex) {
   const pubkey = getPublicKey(skHex);
   const ev = {
@@ -245,19 +245,21 @@ export async function verifyEvent(ev) {
   } catch { return false; }
 }
 
-// Public sync fields only. The `nostr` sidecar is local bookkeeping and is
-// never published inside content (it is derived from the signed event).
-const stripNostr = (o) => { const { nostr, ...rest } = o ?? {}; return rest; };
+// Public sync fields only. Both `nostr` (local bookkeeping) and `key` (the
+// shared campaign write credential) are ALWAYS stripped before publishing.
+const stripLocal = (o) => { const { nostr, key, ...rest } = o ?? {}; return rest; };
 
 /**
  * Campaign event: kind 30078, d = cabal:<id>. Content = campaign v2 JSON
- * (local `nostr` sidecars stripped; assists live in post events, but those
- * already inside the campaign JSON travel with it). Only the campaign author
- * can replace it (address includes their pubkey).
+ * (including `createdBy` and `removedMembers` when present) WITHOUT `key`
+ * or `nostr`. Signed with the campaign key.
  */
 export function campaignEvent(campaign, { createdAt } = {}) {
-  const c = stripNostr(campaign);
-  c.posts = (campaign.posts ?? []).map((p) => ({ ...stripNostr(p), assists: (p.assists ?? []).map(stripNostr) }));
+  const c = stripLocal(campaign);
+  c.posts = (campaign.posts ?? []).map((p) => ({
+    ...stripLocal(p),
+    assists: (p.assists ?? []).map(stripLocal),
+  }));
   return {
     kind: KIND_CAMPAIGN,
     created_at: createdAt ?? nowSec(),
@@ -266,11 +268,22 @@ export function campaignEvent(campaign, { createdAt } = {}) {
   };
 }
 
-/** Post event: kind 1, `a` -> campaign. Content = post JSON (no assists; they have their own events). */
-export function postEvent(campaign, post, { campaignPubkey, createdAt } = {}) {
-  const pk = campaignPubkey ?? campaign?.nostr?.pubkey;
-  if (!pk) throw new Error("postEvent needs the campaign author's pubkey");
-  const { assists, ...rest } = stripNostr(post);
+/**
+ * Removal event: kind 30078 republish of the campaign with updated `members`
+ * and `removedMembers`, WITHOUT `key`, and guaranteed strictly newer
+ * `created_at` than the previous campaign event when `createdAt` is omitted.
+ */
+export function removalEvent(campaign, { createdAt } = {}) {
+  const minCreatedAt = (campaign?.nostr?.createdAt ?? 0) + 1;
+  const ts = createdAt ?? Math.max(nowSec(), minCreatedAt);
+  return campaignEvent(campaign, { createdAt: ts });
+}
+
+/** Post event: kind 1, `a` -> campaign. Content = post JSON (no assists, no key). */
+export function postEvent(campaign, post, { campaignPubkey: pkOpt, createdAt } = {}) {
+  const pk = pkOpt ?? campaignPubkey(campaign);
+  if (!pk) throw new Error("postEvent needs the campaign's pubkey");
+  const { assists, ...rest } = stripLocal(post);
   return {
     kind: KIND_NOTE,
     created_at: createdAt ?? nowSec(),
@@ -281,18 +294,17 @@ export function postEvent(campaign, post, { campaignPubkey, createdAt } = {}) {
 
 /**
  * Enscryption event: kind 1, `e` -> post event (when its id is known), `a` -> campaign.
- * Spec deviation (flagged): a post that only ever lived inside the campaign JSON
- * has no event id, so we also tag `cabal-post` = the post's own id, which is
- * what merge matches on. `e` is added whenever the id is known.
+ * Carries `cabal-post` = the post's id so merge matches even when the post only
+ * lived inside the campaign JSON.
  */
-export function encryptionEvent(campaign, post, assist, { campaignPubkey, postEventId, createdAt } = {}) {
-  const pk = campaignPubkey ?? campaign?.nostr?.pubkey;
-  if (!pk) throw new Error("encryptionEvent needs the campaign author's pubkey");
+export function encryptionEvent(campaign, post, assist, { campaignPubkey: pkOpt, postEventId, createdAt } = {}) {
+  const pk = pkOpt ?? campaignPubkey(campaign);
+  if (!pk) throw new Error("encryptionEvent needs the campaign's pubkey");
   const evId = postEventId ?? post?.nostr?.eventId;
   const tags = [];
   if (evId) tags.push(["e", evId]);
   tags.push(["a", campaignAddress(pk, campaign.id)], ["t", "cabal"], ["cabal-post", post.id]);
-  const { handle, note, url, quoteText, status, contributedAt } = stripNostr(assist);
+  const { handle, note, url, quoteText, status, contributedAt } = stripLocal(assist);
   return {
     kind: KIND_NOTE, created_at: createdAt ?? nowSec(), tags,
     content: JSON.stringify({ handle, status, contributedAt, ...(note != null && { note }), ...(url && { url }), ...(quoteText && { quoteText }) }),
@@ -317,20 +329,20 @@ export function decodeEvent(ev) {
     const postId = tagVal(ev, "cabal-post");
     const data = parseJson(ev.content);
     if (!m || !data || !postId) return null;
-    // A post's own event never carries `handle`; an assist always does.
     return { type: "handle" in data ? "assist" : "post", campaignId: m[2], campaignPubkey: m[1], postId, postEventId: tagVal(ev, "e"), data };
   }
   return null;
 }
 
 // ---------------------------------------------------------------------------
-// Merge (pure, idempotent). Relay content is UNTRUSTED: every field is
-// re-shaped and size-capped here; URLs must be http(s).
+// Merge (pure, idempotent) + client-side removal enforcement (§16b, §17c)
 // ---------------------------------------------------------------------------
 const PLATFORMS = ["x", "bluesky", "threads", "reddit", "instagram", "tiktok", "youtube", "other"];
 const isHttp = (u) => { try { return /^https?:$/.test(new URL(u).protocol); } catch { return false; } };
 const str = (v, max) => (typeof v === "string" ? v.slice(0, max) : undefined);
 const iso = (v) => (typeof v === "string" && !Number.isNaN(Date.parse(v)) ? v : undefined);
+const cloneCampaign = (c) => JSON.parse(JSON.stringify(c));
+const handleKey = (h) => String(h ?? "").trim().toLowerCase();
 
 function cleanPost(d, fallbackCreated) {
   if (!/^pst_[a-z0-9]{3,32}$/.test(d?.id ?? "") || !str(d.author, 80) || !isHttp(d.url)) return null;
@@ -349,22 +361,59 @@ function cleanAssist(d) {
   for (const [k, max] of [["quoteText", 2000], ["note", 280]]) { const v = str(d[k], max); if (v != null) a[k] = v; }
   return a;
 }
+function cleanRemovedMembers(list) {
+  if (!Array.isArray(list)) return [];
+  const byHandle = new Map();
+  for (const r of list) {
+    const handle = str(r?.handle, 80)?.trim();
+    const removedAt = iso(r?.removedAt);
+    if (!handle || !removedAt) continue;
+    const removedBy = str(r?.removedBy, 80)?.trim();
+    const entry = { handle, removedAt, ...(removedBy ? { removedBy } : {}) };
+    const k = handleKey(handle);
+    const prev = byHandle.get(k);
+    if (!prev || Date.parse(removedAt) >= Date.parse(prev.removedAt)) byHandle.set(k, entry);
+  }
+  return [...byHandle.values()];
+}
 
-const cloneCampaign = (c) => JSON.parse(JSON.stringify(c));
-const handleKey = (h) => String(h).toLowerCase();
+/**
+ * True when `handle` is in `campaign.removedMembers` AND `timestamp`
+ * (Unix seconds number or ISO string) is strictly after `removedAt`.
+ * Past writes (timestamp <= removedAt) return false so history stays.
+ */
+export function isRemovedAt(campaign, handle, timestamp) {
+  if (!campaign || !handle || !Array.isArray(campaign.removedMembers)) return false;
+  const key = handleKey(handle);
+  const entry = campaign.removedMembers.find((r) => r && handleKey(r.handle) === key);
+  if (!entry) return false;
+  const removedMs = Date.parse(entry.removedAt);
+  if (Number.isNaN(removedMs)) return false;
+  const tsMs = typeof timestamp === "number" ? timestamp * 1000 : Date.parse(timestamp);
+  if (Number.isNaN(tsMs)) return false;
+  return tsMs > removedMs;
+}
+
+function pruneRemovedFutureWrites(c) {
+  if (!Array.isArray(c.removedMembers) || !c.removedMembers.length) return;
+  c.posts = (c.posts ?? []).filter((p) => !isRemovedAt(c, p.author, p.nostr?.createdAt ?? p.createdAt));
+  for (const p of c.posts) {
+    if (Array.isArray(p.assists)) {
+      p.assists = p.assists.filter((a) => !isRemovedAt(c, a.handle, a.nostr?.createdAt ?? a.contributedAt));
+    }
+  }
+}
 
 /**
  * applyRelayEvents(localCampaigns, events, opts?) -> { campaigns, applied, rejected, seenIds }
- *  - events must already be signature-verified (the relay client does it);
- *    merge still ignores anything undecodable or malformed.
- *  - Idempotent: merge(merge(s, E), E) deep-equals merge(s, E). Dedupes by event id.
- *  - Campaign event replaces campaign METADATA only when its created_at is newer
- *    than the stored one; posts/assists are unioned and upserted, never dropped,
- *    so local work is never clobbered by a stale (or any) event.
- *  - Identity binding: once a post/assist is bound to a pubkey, another pubkey
- *    cannot overwrite it (stops handle squatting on already-synced entries).
- *  - opts.wantIds: only adopt unknown campaigns with these ids.
- *  - opts.normalize: optional V38 normalizeCampaign hook applied to adopted/updated campaigns.
+ *  - All events for a campaign must be signed with the campaign's keypair.
+ *  - Idempotent and order-independent. Dedupes by event id.
+ *  - Campaign event replaces metadata (including `members`, `createdBy`,
+ *    `removedMembers`) only when `created_at` is newer.
+ *  - Local `campaign.key` is NEVER overwritten or adopted from a relay event.
+ *  - Removal enforcement (§17c): future writes (posts/assists) from handles
+ *    in `removedMembers` with `created_at` after `removedAt` are dropped;
+ *    past content stays.
  */
 export function applyRelayEvents(localCampaigns, events, opts = {}) {
   const campaigns = (Array.isArray(localCampaigns) ? localCampaigns : []).map(cloneCampaign);
@@ -383,7 +432,10 @@ export function applyRelayEvents(localCampaigns, events, opts = {}) {
   const rank = { campaign: 0, post: 1, assist: 2 };
   decoded.sort((x, y) => rank[x.d.type] - rank[y.d.type] || x.ev.created_at - y.ev.created_at || (x.ev.id < y.ev.id ? -1 : 1));
 
-  const sameAuthority = (c, pk) => !c.nostr?.pubkey || c.nostr.pubkey === pk;
+  const sameAuthority = (c, pk) => {
+    const known = campaignPubkey(c);
+    return !known || known === pk;
+  };
 
   for (const { ev, d } of decoded) {
     if (d.type === "campaign") {
@@ -392,49 +444,65 @@ export function applyRelayEvents(localCampaigns, events, opts = {}) {
       let c = byId.get(d.campaignId);
       if (!c) {
         if (opts.wantIds && !opts.wantIds.includes(d.campaignId)) { rejected.push({ id: ev.id, reason: "not-wanted" }); continue; }
-        c = { id: d.campaignId, posts: [], members: [], createdAt: iso(raw.createdAt) ?? new Date(ev.created_at * 1000).toISOString() };
+        c = { id: d.campaignId, posts: [], members: [], removedMembers: [], createdAt: iso(raw.createdAt) ?? new Date(ev.created_at * 1000).toISOString() };
         campaigns.push(c); byId.set(c.id, c);
       } else if (!sameAuthority(c, ev.pubkey)) { rejected.push({ id: ev.id, reason: "wrong-author" }); continue; }
       const have = c.nostr?.createdAt ?? 0;
       const first = !c.nostr;
       if (!first && ev.created_at <= have) { rejected.push({ id: ev.id, reason: "stale" }); continue; }
-      // metadata replace (never the posts array wholesale)
+      const localKey = c.key;
+      // metadata replace (never `key`, never the posts array wholesale)
       for (const k of ["game", "title", "members", "window", "anchorPost", "demo"]) if (k in raw) c[k] = raw[k];
+      if (typeof raw.createdBy === "string" && raw.createdBy.trim()) c.createdBy = str(raw.createdBy, 80).trim();
+      if ("removedMembers" in raw) c.removedMembers = cleanRemovedMembers(raw.removedMembers);
       if (typeof raw.createdAt === "string" && !c.createdAt) c.createdAt = raw.createdAt;
+      if (localKey !== undefined) c.key = localKey; else delete c.key;
       c.nostr = { pubkey: ev.pubkey, eventId: ev.id, createdAt: ev.created_at };
       c.posts = c.posts ?? [];
       for (const rp of Array.isArray(raw.posts) ? raw.posts : []) {
         const p = cleanPost(rp, c.createdAt);
         if (!p) continue;
+        if (isRemovedAt(c, p.author, p.createdAt)) continue;
         const i = c.posts.findIndex((x) => x.id === p.id);
         const assists = (Array.isArray(rp.assists) ? rp.assists : []).map(cleanAssist).filter(Boolean);
-        // Embedded posts/assists are the publisher's COPY of other people's
-        // entries: they stay unbound (no pubkey) and never overwrite what we
-        // already hold. A member's own signed event binds + updates them later.
         if (i < 0) c.posts.push({ ...p, assists: [] });
         const post = c.posts.find((x) => x.id === p.id);
         post.assists = post.assists ?? [];
         for (const a of assists) {
+          if (isRemovedAt(c, a.handle, a.contributedAt)) continue;
           if (!post.assists.some((x) => handleKey(x.handle) === handleKey(a.handle))) post.assists.push(a);
         }
       }
+      pruneRemovedFutureWrites(c);
       c.posts.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || (a.id < b.id ? -1 : 1));
-      if (opts.normalize) { const n = opts.normalize(c); if (n) { byId.set(c.id, n); campaigns[campaigns.indexOf(c)] = n; } }
+      if (opts.normalize) {
+        const n = opts.normalize(c);
+        if (n) {
+          if (localKey !== undefined) n.key = localKey; else delete n.key;
+          byId.set(c.id, n);
+          campaigns[campaigns.indexOf(c)] = n;
+        }
+      }
       applied++;
       continue;
     }
+
     const c = byId.get(d.campaignId);
     if (!c) { rejected.push({ id: ev.id, reason: "orphan" }); continue; }
-    if (!sameAuthority(c, d.campaignPubkey)) { rejected.push({ id: ev.id, reason: "wrong-campaign-author" }); continue; }
+    // Shared campaign key: every event must be signed by the campaign's pubkey.
+    if (ev.pubkey !== d.campaignPubkey || !sameAuthority(c, ev.pubkey)) {
+      rejected.push({ id: ev.id, reason: "wrong-author" });
+      continue;
+    }
     if (d.type === "post") {
       const p = cleanPost(d.data, new Date(ev.created_at * 1000).toISOString());
       if (!p || p.id !== d.postId) { rejected.push({ id: ev.id, reason: "bad-post" }); continue; }
+      if (isRemovedAt(c, p.author, ev.created_at)) { rejected.push({ id: ev.id, reason: "removed-member" }); continue; }
       const i = c.posts.findIndex((x) => x.id === p.id);
       const meta = { pubkey: ev.pubkey, eventId: ev.id, createdAt: ev.created_at };
       if (i < 0) { c.posts.push({ ...p, assists: [], nostr: meta }); applied++; }
       else {
         const old = c.posts[i];
-        if (old.nostr?.pubkey && old.nostr.pubkey !== ev.pubkey) { rejected.push({ id: ev.id, reason: "post-owned" }); continue; }
         if (old.nostr?.createdAt >= ev.created_at && old.nostr?.eventId !== ev.id) { rejected.push({ id: ev.id, reason: "stale" }); continue; }
         c.posts[i] = { ...old, ...p, assists: old.assists ?? [], nostr: meta }; applied++;
       }
@@ -444,6 +512,7 @@ export function applyRelayEvents(localCampaigns, events, opts = {}) {
       if (!post) { rejected.push({ id: ev.id, reason: "orphan-post" }); continue; }
       const a = cleanAssist(d.data);
       if (!a) { rejected.push({ id: ev.id, reason: "bad-assist" }); continue; }
+      if (isRemovedAt(c, a.handle, ev.created_at)) { rejected.push({ id: ev.id, reason: "removed-member" }); continue; }
       const r = upsertAssist(post, a, ev.pubkey, ev.created_at, ev.id);
       if (r === true) applied++; else rejected.push({ id: ev.id, reason: r });
     }
@@ -457,7 +526,6 @@ function upsertAssist(post, a, pubkey, createdAt, eventId) {
   const meta = { pubkey, createdAt, ...(eventId && { eventId }) };
   if (i < 0) { post.assists.push({ ...a, nostr: meta }); return true; }
   const old = post.assists[i];
-  if (old.nostr?.pubkey && old.nostr.pubkey !== pubkey) return "handle-owned";
   if (old.nostr && old.nostr.createdAt >= createdAt && old.nostr.eventId !== eventId) return "stale";
   post.assists[i] = { ...old, ...a, nostr: meta };
   return true;
@@ -474,12 +542,12 @@ export function loadSnapshot(localCampaigns, snapshot) {
   return list.some((c) => c.id === snapshot.id) ? list : [...list, cloneCampaign(snapshot)];
 }
 
-/** Relay filters to fetch a campaign. Without the author pubkey we can only find the campaign event first. */
-export function filtersForCampaign(campaignId, authorPubkey) {
+/** Relay filters to fetch a campaign. Without the campaign pubkey we find the campaign event first. */
+export function filtersForCampaign(campaignId, pubkey) {
   const f = [{ kinds: [KIND_CAMPAIGN], "#d": [`cabal:${campaignId}`] }];
-  if (authorPubkey) {
-    f[0].authors = [authorPubkey];
-    f.push({ kinds: [KIND_NOTE], "#a": [campaignAddress(authorPubkey, campaignId)] });
+  if (pubkey) {
+    f[0].authors = [pubkey];
+    f.push({ kinds: [KIND_NOTE], authors: [pubkey], "#a": [campaignAddress(pubkey, campaignId)] });
   }
   return f;
 }
@@ -491,7 +559,7 @@ export function normalizeRelayUrl(u) {
   try {
     const url = new URL(String(u).trim());
     if (url.protocol !== "wss:" && url.protocol !== "ws:") return null;
-    if (url.protocol === "ws:" && !/^(localhost|127\.0\.0\.1)$/.test(url.hostname)) return null; // plaintext only for local dev
+    if (url.protocol === "ws:" && !/^(localhost|127\.0\.0\.1)$/.test(url.hostname)) return null;
     return url.href.replace(/\/$/, "");
   } catch { return null; }
 }
@@ -513,22 +581,14 @@ export const addRelay = (url, storage) => {
   return { ok: true, relays: saveRelays([...loadRelays(storage).relays, u], storage) };
 };
 export const removeRelay = (url, storage) => saveRelays(loadRelays(storage).relays.filter((r) => r !== url), storage);
-/** Opt-in: the user taps "Use the suggested relays". Nothing is published to anyone until they do. */
+/** Opt-in: the user taps "Use the suggested relays". Nothing is published until they do. */
 export const useDefaultRelays = (storage) => saveRelays([...DEFAULT_RELAYS], storage);
 
 // ---------------------------------------------------------------------------
 // Relay client (vanilla WebSocket; best-effort; a down relay never throws)
 // ---------------------------------------------------------------------------
-/**
- * createRelayClient({ relays, WebSocketImpl?, timeoutMs? })
- *  status(): { [url]: "connecting" | "connected" | "unreachable" }  + summary via relayStatus()
- *  publish(signedEvent) -> Promise<{ [url]: {ok, message} }>
- *  fetch(filters, {waitMs}) -> Promise<verifiedEvents[]> (REQ until EOSE/timeout; deduped by id)
- *  close()
- * Incoming events are signature-verified before being returned.
- */
 export function createRelayClient({ relays = [], WebSocketImpl = globalThis.WebSocket, timeoutMs = 6000, onStatus } = {}) {
-  const conns = new Map();   // url -> { ws, state, listeners:Set }
+  const conns = new Map();
   const state = {};
   const setState = (u, s) => { state[u] = s; try { onStatus?.({ ...state }); } catch { /* ui bug must not break sync */ } };
 
@@ -610,12 +670,11 @@ export function relayStatus(configured, relays, statusMap) {
 /**
  * One sync pass for one campaign: fetch -> merge. Returns the new campaigns
  * list; on any relay trouble it returns local state untouched (best-effort).
- * Publishing is separate and always user-initiated (publishCampaign).
  */
-export async function syncCampaign(client, localCampaigns, campaignId, authorPubkey, opts = {}) {
+export async function syncCampaign(client, localCampaigns, campaignId, pubkey, opts = {}) {
   const local = localCampaigns ?? [];
   try {
-    const known = authorPubkey ?? local.find((c) => c.id === campaignId)?.nostr?.pubkey;
+    const known = pubkey ?? campaignPubkey(local.find((c) => c.id === campaignId));
     let events = await client.fetch(filtersForCampaign(campaignId, known));
     if (!known) {
       const camp = events.find((e) => e.kind === KIND_CAMPAIGN);
@@ -627,21 +686,31 @@ export async function syncCampaign(client, localCampaigns, campaignId, authorPub
   }
 }
 
-/** Sign and publish the campaign event + every post/assist this key authored. User-initiated only. */
-export async function publishCampaign(client, vault, campaign, me = {}) {
-  const st = vault.status();
-  if (st.state !== "ready") throw new Error("Finish key setup before publishing.");
-  const author = campaign.nostr?.pubkey ?? st.pk;
+/**
+ * Sign and publish a campaign + posts/assists using the campaign's shared key.
+ * If `opts.handle` is given, only posts/assists for that handle are published
+ * alongside the campaign event; otherwise all posts/assists are published.
+ * Throws when the campaign has no write key (e.g. read-only discovered ring).
+ */
+export async function publishCampaign(client, campaign, opts = {}) {
+  if (!hasCampaignKey(campaign)) {
+    throw new Error("Read-only ring — open the invite link from a member to publish.");
+  }
+  const { key, pubkey } = campaignKeypair(campaign);
+  const handle = opts.handle ?? opts.me?.handle;
+  const includeCampaign = opts.includeCampaignEvent !== false;
   const out = [];
-  if (author === st.pk) out.push(await vault.signEvent(campaignEvent(campaign)));
+  if (includeCampaign) out.push(await signEvent(campaignEvent(campaign), key));
   for (const p of campaign.posts ?? []) {
     let pev = p.nostr?.eventId;
-    if (p.author && me.handle && handleKey(p.author) === handleKey(me.handle) && (!p.nostr?.pubkey || p.nostr.pubkey === st.pk) && author) {
-      const e = await vault.signEvent(postEvent(campaign, p, { campaignPubkey: author })); out.push(e); pev = e.id;
+    if (!handle || handleKey(p.author) === handleKey(handle)) {
+      const e = await signEvent(postEvent(campaign, p, { campaignPubkey: pubkey }), key);
+      out.push(e);
+      pev = e.id;
     }
     for (const a of p.assists ?? []) {
-      if (me.handle && handleKey(a.handle) === handleKey(me.handle) && (!a.nostr?.pubkey || a.nostr.pubkey === st.pk)) {
-        out.push(await vault.signEvent(encryptionEvent(campaign, p, a, { campaignPubkey: author, postEventId: pev })));
+      if (!handle || handleKey(a.handle) === handleKey(handle)) {
+        out.push(await signEvent(encryptionEvent(campaign, p, a, { campaignPubkey: pubkey, postEventId: pev }), key));
       }
     }
   }
@@ -650,28 +719,34 @@ export async function publishCampaign(client, vault, campaign, me = {}) {
   return results;
 }
 
-// ---------------------------------------------------------------------------
-// Onboarding copy (exact strings; the task doc repeats these)
-// ---------------------------------------------------------------------------
-export const COPY = Object.freeze({
-  intro: "To sync your ring across devices, Cabal makes you a key. It is just for Cabal, and it is made right here in your browser.",
-  show: "This is your secret key. It is shown once. Copy it somewhere safe now — a password manager is ideal.",
-  warn: "If you lose this key, you lose this identity. There is no recovery, no password reset, and nobody to ask. Anyone who has it can post as you.",
-  confirm: "I have saved my secret key somewhere safe.",
-  importLabel: "Already have a Cabal key? Paste it here to restore it.",
-  perBrowser: "A key belongs to one browser. A second browser is a second identity unless you paste the same key there.",
-  privacy: PRIVACY_LINE,
-});
+/**
+ * Publish a creator removal as a kind 30078 campaign event republish (§17c).
+ * Uses the campaign's shared key, strips `key` from content, guarantees a
+ * strictly newer `created_at` so every client adopts the updated `members`
+ * and `removedMembers` without rotating the invite link.
+ */
+export async function publishRemoval(client, campaign, opts = {}) {
+  if (!hasCampaignKey(campaign)) {
+    throw new Error("Read-only ring — invite link key is required to publish a removal.");
+  }
+  if (opts.by && campaign.createdBy && handleKey(opts.by) !== handleKey(campaign.createdBy)) {
+    throw new Error("Only the campaign creator can publish a removal.");
+  }
+  const { key } = campaignKeypair(campaign);
+  const ev = await signEvent(removalEvent(campaign, { createdAt: opts.createdAt }), key);
+  const relays = await client.publish(ev);
+  return { event: ev, id: ev.id, kind: ev.kind, relays };
+}
 
 // ---------------------------------------------------------------------------
-// mount(rootEl, ctx) — the sync panel. DOM only here; coordinator wires it in V42.
-// ctx: { storage?, client?, getCampaigns?, onChange?, WebSocketImpl? }
+// mount(rootEl, ctx) — the sync panel (relay status, relay list, publish
+// state, membership state, one-line privacy statement).
+// NO key UI, NO onboarding. Coordinator wires it into app.js/index.html.
+// ctx: { storage?, client?, campaign?, getCampaigns?, me?, onMerged?, WebSocketImpl? }
 // ---------------------------------------------------------------------------
 export function mount(rootEl, ctx = {}) {
   const doc = rootEl.ownerDocument;
-  const vault = ctx.vault ?? createKeyVault(ctx.storage);
   let statusMap = {};
-  let revealed = null;
   let message = "";
   const el = (tag, props = {}, ...kids) => {
     const n = doc.createElement(tag);
@@ -683,35 +758,10 @@ export function mount(rootEl, ctx = {}) {
     const { relays } = loadRelays(ctx.storage);
     return ctx.client ?? createRelayClient({ relays, WebSocketImpl: ctx.WebSocketImpl, onStatus: (s) => { statusMap = s; render(); } });
   };
-
-  function keySection() {
-    const st = vault.status();
-    const box = el("section", { class: "nostr-key" }, el("h3", {}, "Your Cabal key"));
-    if (st.state === "ready") {
-      box.append(el("p", {}, `Identity: ${st.npub}`), el("p", { class: "muted" }, COPY.perBrowser));
-      return box;
-    }
-    if (st.state === "pending") {
-      const nsec = revealed ?? vault.revealOnce();
-      box.append(el("p", {}, COPY.show), el("pre", { class: "nostr-nsec" }, nsec), el("p", { class: "warn" }, COPY.warn));
-      const cb = el("input", { type: "checkbox", id: "nostr-saved" });
-      const done = el("button", { type: "button", disabled: "" }, "Continue");
-      cb.addEventListener("change", () => { cb.checked ? done.removeAttribute("disabled") : done.setAttribute("disabled", ""); });
-      done.addEventListener("click", () => { if (cb.checked && vault.confirmSaved()) { revealed = null; render(); ctx.onChange?.(); } });
-      box.append(el("label", {}, cb, ` ${COPY.confirm}`), done);
-      return box;
-    }
-    box.append(el("p", {}, COPY.intro), el("p", { class: "warn" }, COPY.warn));
-    box.append(el("button", { type: "button", onclick: () => { revealed = vault.generate().nsec; render(); } }, "Make my key"));
-    const input = el("input", { type: "password", autocomplete: "off", placeholder: "nsec1…" });
-    const err = el("p", { class: "warn" });
-    box.append(el("label", {}, COPY.importLabel, input), el("button", { type: "button", onclick: () => {
-      const r = vault.import(input.value); input.value = "";
-      if (!r.ok) { err.textContent = r.error; return; }
-      render(); ctx.onChange?.();
-    } }, "Restore key"), err);
-    return box;
-  }
+  const activeCampaigns = () => {
+    if (ctx.campaign) return [ctx.campaign];
+    return ctx.getCampaigns?.() ?? [];
+  };
 
   function relaySection() {
     const { configured, relays } = loadRelays(ctx.storage);
@@ -727,15 +777,38 @@ export function mount(rootEl, ctx = {}) {
     return box;
   }
 
+  function membershipSection() {
+    const camps = activeCampaigns();
+    const box = el("section", { class: "nostr-membership" }, el("h3", {}, "Ring sync & membership"));
+    if (!camps.length) {
+      box.append(el("p", { class: "muted" }, "No rings loaded yet."));
+      return box;
+    }
+    const ul = el("ul", {});
+    const myHandle = ctx.me?.handle;
+    for (const c of camps) {
+      const writable = hasCampaignKey(c);
+      const removed = Array.isArray(c.removedMembers) ? c.removedMembers : [];
+      const meRemoved = myHandle && removed.some((r) => handleKey(r.handle) === handleKey(myHandle));
+      const access = meRemoved ? "removed (read-only)" : (writable ? "write access via invite link" : "read-only");
+      const pubState = c.nostr?.createdAt ? `last synced ${new Date(c.nostr.createdAt * 1000).toISOString()}` : "not published yet";
+      const memberHandles = (c.members ?? []).map((m) => m.handle).filter(Boolean).join(", ") || "none";
+      const removedText = removed.length ? ` · Removed: ${removed.map((r) => r.handle).join(", ")}` : "";
+      ul.append(el("li", {}, `${c.title || c.id} — ${access}; ${pubState}. Members: ${memberHandles}${removedText}`));
+    }
+    box.append(ul);
+    return box;
+  }
+
   function actionSection() {
     const box = el("section", { class: "nostr-sync" }, el("h3", {}, "Sync"));
-    const ready = vault.status().state === "ready";
     const { relays } = loadRelays(ctx.storage);
+    const camps = activeCampaigns();
+    const canPublish = relays.length > 0 && camps.some(hasCampaignKey);
     box.append(el("button", { type: "button", ...(relays.length ? {} : { disabled: "" }), onclick: async () => {
       message = "Syncing…"; render();
       const client = clientFor();
       try {
-        const camps = ctx.getCampaigns?.() ?? [];
         let list = camps; let n = 0;
         for (const c of camps) { const r = await syncCampaign(client, list, c.id); list = r.campaigns; n += r.applied; }
         ctx.onMerged?.(list);
@@ -743,12 +816,17 @@ export function mount(rootEl, ctx = {}) {
       } catch { message = "Couldn't reach the relays. Your ring still works from this browser."; }
       render();
     } }, "Fetch updates"));
-    if (ready) box.append(el("button", { type: "button", ...(relays.length ? {} : { disabled: "" }), onclick: async () => {
+    box.append(el("button", { type: "button", ...(canPublish ? {} : { disabled: "" }), onclick: async () => {
       message = "Publishing…"; render();
       try {
-        const me = ctx.me ?? {};
+        const handle = ctx.me?.handle;
         let ok = 0, total = 0;
-        for (const c of ctx.getCampaigns?.() ?? []) for (const r of await publishCampaign(clientFor(), vault, c, me)) for (const x of Object.values(r.relays)) { total++; if (x.ok) ok++; }
+        for (const c of camps) {
+          if (!hasCampaignKey(c)) continue;
+          for (const r of await publishCampaign(clientFor(), c, { handle })) {
+            for (const x of Object.values(r.relays)) { total++; if (x.ok) ok++; }
+          }
+        }
         message = `Published to relays: ${ok} of ${total} accepted. It is public, and it can't be reliably deleted.`;
       } catch (e) { message = String(e?.message ?? "Publishing failed."); }
       render();
@@ -759,7 +837,7 @@ export function mount(rootEl, ctx = {}) {
 
   function render() {
     rootEl.replaceChildren(
-      el("div", { class: "nostr-panel" }, el("h2", {}, "Sync (Nostr)"), el("p", { class: "privacy" }, COPY.privacy), keySection(), relaySection(), actionSection()),
+      el("div", { class: "nostr-panel" }, el("h2", {}, "Sync (Nostr)"), el("p", { class: "privacy" }, PRIVACY_LINE), relaySection(), membershipSection(), actionSection()),
     );
   }
   render();
