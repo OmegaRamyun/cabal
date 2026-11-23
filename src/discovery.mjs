@@ -124,13 +124,13 @@ export function mount(rootEl, ctx = {}) {
 
   rootEl.appendChild(el(doc, "h2", "Similar games"));
   const simList = el(doc, "ul", null, "discovery-similar");
-  if (!similar.length) simList.appendChild(el(doc, "li", "No similar campaigns yet."));
+  if (!similar.length) simList.appendChild(el(doc, "li", "No similar campaigns yet.", "empty-state"));
   for (const c of similar) simList.appendChild(rowEl(doc, c, ctx.navigate));
   rootEl.appendChild(simList);
 
   rootEl.appendChild(el(doc, "h2", "Popular"));
   const popList = el(doc, "ul", null, "discovery-popular");
-  if (!popular.length) popList.appendChild(el(doc, "li", "No popular campaigns yet."));
+  if (!popular.length) popList.appendChild(el(doc, "li", "No popular campaigns yet.", "empty-state"));
   for (const c of popular) popList.appendChild(rowEl(doc, c, ctx.navigate));
   rootEl.appendChild(popList);
 }

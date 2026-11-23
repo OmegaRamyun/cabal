@@ -171,12 +171,18 @@ function gameLinksHtml(game) {
   return out.join(' · ');
 }
 
+function meterHtml(s) {
+  const pct = s.total ? Math.round((s.posted / s.total) * 100) : 0;
+  return `<div class="ring-progress" role="progressbar" aria-valuenow="${s.posted}" aria-valuemin="0" aria-valuemax="${s.total}" aria-label="Posted ${s.posted} of ${s.total}"><div class="ring-progress-fill" style="width:${pct}%"></div></div>`;
+}
+
 function campaignCardHtml(campaign, { showTurnButton = false } = {}) {
   const s = ringSummary(campaign);
   return `<article class="campaign-card" data-campaign-id="${esc(campaign.id)}">
     <h3><a href="#" data-open-campaign="${esc(campaign.id)}">${esc(campaign.title)}</a>${demoBadge(campaign)}</h3>
     <p class="anchor-preview">&ldquo;${esc(campaign.anchorPost.text)}&rdquo; — ${esc(campaign.anchorPost.author)}</p>
     <p class="campaign-meta">${esc(windowLabel(campaign))} · Posted ${s.posted}/${s.total}</p>
+    ${meterHtml(s)}
     ${showTurnButton ? `<button type="button" data-open-composer="${esc(campaign.id)}">Open quote composer</button>` : ''}
   </article>`;
 }
@@ -275,15 +281,15 @@ export function mount(rootEl, ctx) {
         <p><button type="button" id="start-campaign" class="primary">Start a campaign</button></p>
         <section class="live-campaign">
           <h3>Live campaign</h3>
-          ${live ? campaignCardHtml(live) : '<p>No live campaign yet. Start one and get the ring pushing.</p>'}
+          ${live ? campaignCardHtml(live) : '<p class="empty-state">No live campaign yet. Start one and get the ring pushing.</p>'}
         </section>
         <section class="your-turn">
           <h3>Your turn</h3>
-          ${turn.length ? turn.map((c) => campaignCardHtml(c, { showTurnButton: true })).join('') : '<p>Nothing owed — no quote-posts pending.</p>'}
+          ${turn.length ? turn.map((c) => campaignCardHtml(c, { showTurnButton: true })).join('') : '<p class="empty-state">Nothing owed — no quote-posts pending.</p>'}
         </section>
         <section class="your-rings">
           <h3>Your rings</h3>
-          ${rings.length ? rings.map((c) => campaignCardHtml(c)).join('') : '<p>No campaigns yet.</p>'}
+          ${rings.length ? rings.map((c) => campaignCardHtml(c)).join('') : '<p class="empty-state">No campaigns yet.</p>'}
         </section>
       </section>`;
 

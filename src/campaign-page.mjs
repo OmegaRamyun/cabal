@@ -39,6 +39,11 @@ function windowLabel(campaign) {
   return 'Open-ended — no window';
 }
 
+function meterHtml(summary) {
+  const pct = summary.total ? Math.round((summary.posted / summary.total) * 100) : 0;
+  return `<div class="ring-progress" role="progressbar" aria-valuenow="${summary.posted}" aria-valuemin="0" aria-valuemax="${summary.total}" aria-label="Posted ${summary.posted} of ${summary.total}"><div class="ring-progress-fill" style="width:${pct}%"></div></div>`;
+}
+
 export function mount(rootEl, ctx) {
   const store = resolveStore(ctx);
   const campaign = ctx && ctx.campaign;
@@ -82,6 +87,7 @@ export function mount(rootEl, ctx) {
           <p class="anchor-meta">${esc(campaign.anchorPost.author)} · ${esc(campaign.anchorPost.platform)} ·
             <a href="${esc(campaign.anchorPost.url)}">View original post</a></p>
           <p class="campaign-meta">${esc(windowLabel(campaign))} · Posted ${summary.posted}/${summary.total}</p>
+          ${meterHtml(summary)}
         </article>
         <section class="campaign-share">
           <h3>Share this campaign</h3>
@@ -103,7 +109,7 @@ export function mount(rootEl, ctx) {
                     </li>`,
                   )
                   .join('')}</ul>`
-              : '<p>No members yet — be the first to join.</p>'
+              : '<p class="empty-state">No members yet — be the first to join.</p>'
           }
         </section>
         <section class="ring-join">
