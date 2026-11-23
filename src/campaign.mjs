@@ -183,6 +183,21 @@ export function validateCampaign(c) {
   if (!validDate(c.createdAt)) {
     errors.push("createdAt: missing or not a valid date");
   }
+  if (c.createdBy !== undefined && !isNonEmptyString(c.createdBy)) {
+    errors.push("createdBy: must be a non-empty string");
+  }
+  if (c.key !== undefined && !isNonEmptyString(c.key)) {
+    errors.push("key: must be a non-empty string");
+  }
+  if (c.removedMembers !== undefined) {
+    if (!Array.isArray(c.removedMembers)) {
+      errors.push("removedMembers: must be an array");
+    } else {
+      c.removedMembers.forEach((r, i) => {
+        if (!isObj(r) || !isNonEmptyString(r.handle)) errors.push(`removedMembers[${i}].handle: missing`);
+      });
+    }
+  }
   return errors;
 }
 
@@ -231,6 +246,7 @@ export function normalizeCampaign(c) {
   try {
     if (!isObj(c)) return c;
     const next = clone(c);
+    applyRemovalDefaults(next);
     if (!Array.isArray(next.posts) || next.posts.length === 0) {
       if (isObj(next.anchorPost)) next.posts = [postFromAnchor(next)];
       else return next;
@@ -248,7 +264,7 @@ export function normalizeCampaign(c) {
       });
       return post;
     });
-    if (next.posts.length === 0) return clone(c);
+    if (next.posts.length === 0) { const orig = clone(c); applyRemovalDefaults(orig); return orig; }
     if (!isObj(next.anchorPost)) {
       const p0 = next.posts[0];
       next.anchorPost = {
@@ -281,6 +297,24 @@ export function normalizeCampaign(c) {
   } catch {
     return c;
   }
+}
+
+/**
+ * Removal-model defaults (spec 17b), applied in place on a clone:
+ * createdBy pins to members[0].handle the first time it is seen (so a later
+ * removal/reorder of the roster can't change who the creator is);
+ * removedMembers defaults to []. Unknown fields (nostr sidecar, key) are
+ * left alone.
+ */
+function applyRemovalDefaults(next) {
+  if (!Array.isArray(next.members)) return; // not campaign-shaped: pass through untouched
+  if (!isNonEmptyString(next.createdBy)) {
+    const h = Array.isArray(next.members) && isObj(next.members[0]) ? next.members[0].handle : null;
+    if (isNonEmptyString(h)) next.createdBy = h;
+  }
+  next.removedMembers = Array.isArray(next.removedMembers)
+    ? next.removedMembers.filter((r) => isObj(r) && isNonEmptyString(r.handle))
+    : [];
 }
 
 /**
@@ -319,6 +353,7 @@ export function createCampaign(input = {}) {
     window: win ? { start: win.start, end: win.end } : null,
     members,
     createdAt,
+    ...(isNonEmptyString(input.key) ? { key: input.key } : {}),
     ...(demo === true ? { demo: true } : {}),
   };
   const errors = [];
@@ -388,10 +423,55 @@ export function addMember(campaign, member) {
     (m) => String(m.handle).trim().toLowerCase() === handle.toLowerCase(),
   );
   if (exists) return next;
+  if (isRemoved(next, handle)) return next; // creator removal: join refused (spec 17b)
   next.members = [...(next.members || []), {
     name: member.name, handle,
     ...(member.platform ? { platform: member.platform } : {}),
   }];
+  return next;
+}
+
+/** createdBy with the members[0] fallback for campaigns not yet normalized. */
+function creatorOf(campaign) {
+  if (isNonEmptyString(campaign?.createdBy)) return campaign.createdBy;
+  const m0 = campaign?.members?.[0];
+  return isNonEmptyString(m0?.handle) ? m0.handle : "";
+}
+
+/** isRemoved(campaign, handle) — case-insensitive lookup in removedMembers. */
+export function isRemoved(campaign, handle) {
+  const h = lc(handle);
+  if (!h || !Array.isArray(campaign?.removedMembers)) return false;
+  return campaign.removedMembers.some((r) => lc(r?.handle) === h);
+}
+
+/** isMember(campaign, handle) — case-insensitive lookup in the current roster. */
+export function isMember(campaign, handle) {
+  const h = lc(handle);
+  if (!h || !Array.isArray(campaign?.members)) return false;
+  return campaign.members.some((m) => lc(m?.handle) === h);
+}
+
+/**
+ * removeMember(campaign, handle, { by, now? }) -> NEW campaign, no mutation.
+ * Only `by` === createdBy (case-insensitive) may remove; otherwise an
+ * unchanged copy. The creator cannot remove themself (that would orphan the
+ * ring). Drops the handle from the roster, records it in removedMembers
+ * (a repeat removal refreshes removedAt/removedBy, never duplicates), and
+ * keeps their posts and assists as history. Scoped to this campaign only.
+ */
+export function removeMember(campaign, handle, { by, now } = {}) {
+  const next = clone(campaign);
+  const target = String(handle ?? "").trim();
+  const creator = creatorOf(next);
+  if (!target || !creator || lc(by) !== lc(creator) || lc(target) === lc(creator)) return next;
+  if (!isNonEmptyString(next.createdBy)) next.createdBy = creator;
+  const removedAt = stampOf(now);
+  const list = Array.isArray(next.removedMembers) ? next.removedMembers : [];
+  const i = list.findIndex((r) => lc(r?.handle) === lc(target));
+  const entry = { handle: i >= 0 ? list[i].handle : target, removedAt, removedBy: creator };
+  next.removedMembers = i >= 0 ? list.map((r, j) => (j === i ? entry : r)) : [...list, entry];
+  next.members = (next.members || []).filter((m) => lc(m?.handle) !== lc(target));
   return next;
 }
 
@@ -696,27 +776,48 @@ function base64urlDecode(str) {
 }
 
 /**
- * encodeCampaignLink(campaign, baseUrl) -> { url, long }.
- * url is baseUrl + '#c=' + base64url(JSON). long is true when the encoded
- * payload exceeds 2000 chars (the link is still returned).
+ * Link format: `<base>#c=<base64url(JSON)>[&k=<encodeURIComponent(key)>]`.
+ * The campaign key rides in its OWN fragment param (`k`), never inside the
+ * JSON payload and never in a query string. Fragments are not sent to the
+ * server. The payload JSON is always key-free (encode strips `key`), so
+ * anything that republishes the payload cannot leak it. base64url has no
+ * '&', so `&` safely separates params.
+ *
+ * encodeCampaignLink(campaign, baseUrl) -> { url, long }. `long` is true
+ * when the encoded payload exceeds 2000 chars (the link is still returned).
  */
 export function encodeCampaignLink(campaign, baseUrl = "") {
-  const payload = base64urlEncode(JSON.stringify(campaign));
-  return { url: `${baseUrl}#c=${payload}`, long: payload.length > LINK_LONG_LIMIT };
+  const { key, ...rest } = isObj(campaign) ? campaign : {};
+  const payload = base64urlEncode(JSON.stringify(isObj(campaign) ? rest : campaign));
+  const k = isNonEmptyString(key) ? `&k=${encodeURIComponent(key)}` : "";
+  return { url: `${baseUrl}#c=${payload}${k}`, long: payload.length > LINK_LONG_LIMIT };
 }
 
 /**
  * decodeCampaignLink(hash) -> { campaign } or { error } — never throws.
  * Accepts a bare '#c=...' hash, a bare 'c=...' fragment, or a full URL
- * containing '#c='. Invalid base64 / JSON / validation all yield { error }.
+ * containing '#c='. A `k=` fragment param becomes campaign.key. Invalid
+ * base64 / JSON / validation all yield { error } (messages never echo the
+ * key).
  */
 export function decodeCampaignLink(hash) {
   try {
     if (typeof hash !== "string" || !hash) return { error: "missing campaign link" };
     const idx = hash.indexOf("#c=");
-    const payload = idx >= 0 ? hash.slice(idx + 3) : hash.startsWith("c=") ? hash.slice(2) : null;
-    if (!payload) return { error: "no campaign payload in link" };
-    const campaign = normalizeCampaign(JSON.parse(base64urlDecode(payload)));
+    const frag = idx >= 0 ? hash.slice(idx + 1) : hash.startsWith("c=") ? hash : null;
+    if (!frag) return { error: "no campaign payload in link" };
+    const params = {};
+    for (const part of frag.split("&")) {
+      const eq = part.indexOf("=");
+      if (eq > 0 && !(part.slice(0, eq) in params)) params[part.slice(0, eq)] = part.slice(eq + 1);
+    }
+    if (!params.c) return { error: "no campaign payload in link" };
+    const campaign = normalizeCampaign(JSON.parse(base64urlDecode(params.c)));
+    if (isNonEmptyString(params.k)) {
+      let key = params.k;
+      try { key = decodeURIComponent(params.k); } catch { /* keep raw */ }
+      campaign.key = key;
+    }
     const errors = validateCampaign(campaign);
     if (errors.length > 0) return { error: `invalid campaign: ${errors.join("; ")}` };
     return { campaign };
