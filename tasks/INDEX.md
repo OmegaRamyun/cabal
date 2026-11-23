@@ -44,6 +44,7 @@ harness, other tasks own their test files.
 | V34 | Shadow Cabal background: gradient-noise canvas + scrim | `src/background.mjs`, `tests/v34-background.test.mjs`, `tasks/V34-shadow-background.md` | done | `task/V34-shadow-background` |
 | V35 | Field journal gamification (craft only, no quotas/ledgers) | `src/gamify.mjs`, `tests/v35-gamify.test.mjs`, `tasks/V35-gamification.md` | done | `task/V35-gamification` |
 | V36 | Integration: wire V33/V34/V35 into the shell, Souls theme | `index.html`, `style.css`, `app.js`, `tasks/V36-integration.md`, `src/store.mjs`, `src/gamify.mjs`, `src/checklist.mjs`, `tests/t01.test.mjs`, `tests/v21-campaign.test.mjs`, `tests/v26-migration.test.mjs`, `tests/v30-navbar.test.mjs`, `tests/v35-gamify.test.mjs`, `version.json` | done | `task/V36-integration` |
+| V37 | Pass it on: teach the second-order loop (#Ring channel) | `src/intro.mjs`, `src/campaign-page.mjs`, `style.css`, `tests/v33-intro.test.mjs`, `tests/v22-home.test.mjs`, `tasks/V37-pass-it-on.md`, `version.json` | done | `task/V37-pass-it-on` |
 
 Coordinator owns the shell (`index.html`, `style.css`, `app.js`), the merge,
 and the end-to-end Playwright check. Tracks build modules + tests only and

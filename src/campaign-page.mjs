@@ -45,6 +45,17 @@ function meterHtml(summary) {
   return `<div class="ring-progress" role="progressbar" aria-valuenow="${summary.posted}" aria-valuemin="0" aria-valuemax="${summary.total}" aria-label="Posted ${summary.posted} of ${summary.total}"><div class="ring-progress-fill" style="width:${pct}%"></div></div>`;
 }
 
+/**
+ * hasQuotablePost(campaign) — true when at least one ring member has
+ * posted with a quote-post link worth passing on. Pure; drives the
+ * "pass it on" nudge on the campaign page.
+ */
+export function hasQuotablePost(campaign) {
+  return (campaign?.members || []).some(
+    (m) => m.status === 'posted' && m.quoteUrl,
+  );
+}
+
 export function mount(rootEl, ctx) {
   const store = resolveStore(ctx);
   const campaign = ctx && ctx.campaign;
@@ -65,6 +76,7 @@ export function mount(rootEl, ctx) {
     const myStatus = alreadyMember
       ? (campaign.members || []).find((m) => m.handle === me.handle)?.status
       : null;
+    const hasQuotable = hasQuotablePost(campaign);
     // The compose box lives on the page for pending members: composer-first.
     const showComposer = alreadyMember && myStatus === 'pending';
     // Anchor post time: the window start is the proxy (the anchor's own
@@ -132,6 +144,7 @@ export function mount(rootEl, ctx) {
                   .join('')}</ul>`
               : '<p class="empty-state">No members yet — be the first to join.</p>'
           }
+          ${hasQuotable ? `<p class="ring-pass-on">A ringmate&rsquo;s quote-post travels further when a real reader passes it on. If one speaks to you, open it and share its link in your own #Ring channel or wherever your people gather. Only what you genuinely like — never an obligation, never a count.</p>` : ''}
         </section>
         <section class="ring-join">
           ${
