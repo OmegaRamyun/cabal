@@ -123,3 +123,23 @@ were re-dispatched after v0.2.22; results in the round report.
 - Standing items: APP_VERSION updater race fix (unruled); Threads
   click-test or drop; V35 streaks/roles/badges ruling + AGENTS.md
   amendment.
+
+## Cade corrections, Nov 23 ~11:46-11:47 (both live, both stand)
+
+- **Creation must be obvious (V49 dispatched, Claude):** "how is
+  somebody supposed to use this and create campaigns lol." Hard
+  requirement: both views carry a big obvious create action on the
+  view itself — "Start a ring" on Rings, "New campaign template" on
+  Campaigns — not buried in Tools, not only on Home. Flow must be
+  short and self-explanatory without the primer. First-run usability
+  check added to verification: open each view cold, find and
+  complete creation in under a minute.
+- **Fresh shelf KILLED (V50 voided before dispatch):** the
+  label-not-wall steer is VOID. The >=2-dev share requirement STANDS
+  as a wall: a ring needs >=2 real devs before it shows in discovery,
+  full stop. Invisibility until somebody else participates is the
+  filter working as intended, not a cold-start bug — his words: "If
+  you can't get one other person you're kinda dumb." The bootstrap
+  is the link, shared in your own channels to get that first person.
+  No fresh/unproven shelf, no badge softening. V50 brief + run
+  script deleted; never re-propose.
