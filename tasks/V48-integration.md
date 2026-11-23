@@ -69,13 +69,18 @@ events (without which V46 counting could never see anything).
   `tests/v48-integration.test.mjs`: routes, nav mapping, usageRingCounts
   seam, event tagging with/without formatId, formatId lifecycle).
 - BIP-340: 19/19 official vectors pass (V47, unchanged by V48).
-- Manual check (DOM) — Playwright headless shell, local server (see
-  coordinator smoke notes in the round report): home renders "My
-  Rings"; `#/campaigns` lists the 3 demo formats + ring sections;
-  `#/format/fmt_algoigno` renders tagline/guidance/examples/rings +
-  "Start a ring" → `#/rings/fmt_algoigno` opens the create view with
-  the format line; `#/campaign/cmp_toon001` shows the Sync panel;
-  console errors recorded in the report.
+- Manual check (DOM) — Playwright headless shell, local server:
+  9/9 checks pass (one first-run FAIL was the script reading the page
+  at 2.5s, before the 6s relay query resolved; re-check at 10s shows
+  "Couldn't reach the relays — usage counts hidden." present, zero
+  page errors). Home renders "My Rings"; `#/campaigns` lists the 3
+  demo formats + ring sections; `#/format/fmt_algoigno` renders
+  tagline/guidance/examples/rings + "Start a ring" →
+  `#/rings/fmt_algoigno` opens the create view with the format line;
+  `#/campaign/cmp_toon001` shows the Sync panel; zero page errors and
+  zero failed requests. The only console errors are the two expected
+  sandbox relay blocks (damus + nos.lol WebSockets fail through the
+  proxy; the app degrades gracefully to the couldn't-reach note).
 
 ## Left open
 
