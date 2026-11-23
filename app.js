@@ -143,10 +143,14 @@ function renderComposer(view, id) {
     quoteComposer.mount(view, {
       campaign,
       me: store.me,
-      onPosted: (quoteUrl) => {
+      onPosted: (quoteUrl, draft) => {
         const me = store.me;
         if (me && me.handle) {
           const updated = markPosted(campaign, me.handle, quoteUrl || undefined);
+          const member = (updated.members || []).find(
+            (mm) => String(mm.handle).trim().toLowerCase() === String(me.handle).trim().toLowerCase(),
+          );
+          if (member && String(draft || '').trim()) member.quoteText = String(draft).trim();
           const list = store.campaigns;
           const idx = list.findIndex((c) => c.id === campaign.id);
           if (idx >= 0) list[idx] = updated;

@@ -9,6 +9,7 @@
 
 import { gate } from './similarity.mjs';
 import { buildIntent } from './intents.mjs';
+import { initials, avatarHue } from './campaign.mjs';
 
 export const PLATFORMS = ['x', 'bluesky'];
 const LABELS = { x: 'X', bluesky: 'Bluesky' };
@@ -86,7 +87,7 @@ export function confirmPosted({ prompt, onPosted }) {
 }
 
 /**
- * mount(rootEl, ctx) where ctx = { campaign, me, onPosted(quoteUrl) }.
+ * mount(rootEl, ctx) where ctx = { campaign, me, onPosted(quoteUrl), compact? }.
  * Optional ctx.prompt(promptText) overrides the browser prompt (used by
  * tests); without one, window.prompt is used, and when no prompt exists
  * at all the click reports posted with an empty quote URL.
@@ -94,40 +95,62 @@ export function confirmPosted({ prompt, onPosted }) {
  * gate warning, "Open in X" / "Open in Bluesky" links, and an
  * "I posted it" button. Returns handles { textarea, warning, links,
  * postedButton, update, destroy }.
+ * compact (for embedding on the campaign page): skips the heading and the
+ * anchor box — the page already shows the original above the compose box.
  */
 export function mount(rootEl, ctx = {}) {
   const { campaign, me, onPosted } = ctx;
+  const compact = ctx.compact === true;
   const doc = rootEl.ownerDocument;
   const anchor = anchorOf(campaign);
 
   const section = doc.createElement('section');
   section.className = 'quote-composer';
 
-  const heading = doc.createElement('h3');
-  heading.textContent = 'Quote-post the announcement';
-  section.append(heading);
+  let anchorBox = null;
+  if (!compact) {
+    const heading = doc.createElement('h3');
+    heading.textContent = 'Quote-post the announcement';
+    section.append(heading);
 
-  const anchorBox = doc.createElement('div');
-  anchorBox.className = 'quote-anchor';
-  const anchorLabel = doc.createElement('p');
-  anchorLabel.className = 'quote-anchor-label';
-  anchorLabel.textContent = 'Original post';
-  const author = doc.createElement('p');
-  author.className = 'quote-anchor-author';
-  author.textContent = anchor.author ? `by ${anchor.author}` : '';
-  const quote = doc.createElement('blockquote');
-  quote.className = 'quote-anchor-text';
-  quote.textContent = anchor.text ?? '';
-  const anchorLink = doc.createElement('a');
-  anchorLink.className = 'quote-anchor-link';
-  anchorLink.textContent = 'View original';
-  if (anchor.url) {
-    anchorLink.href = anchor.url;
-    anchorLink.target = '_blank';
-    anchorLink.rel = 'noopener noreferrer';
+    anchorBox = doc.createElement('div');
+    anchorBox.className = 'quote-anchor';
+    const anchorLabel = doc.createElement('p');
+    anchorLabel.className = 'quote-anchor-label';
+    anchorLabel.textContent = 'Original post';
+    const author = doc.createElement('p');
+    author.className = 'quote-anchor-author';
+    author.textContent = anchor.author ? `by ${anchor.author}` : '';
+    const quote = doc.createElement('blockquote');
+    quote.className = 'quote-anchor-text';
+    quote.textContent = anchor.text ?? '';
+    const anchorLink = doc.createElement('a');
+    anchorLink.className = 'quote-anchor-link';
+    anchorLink.textContent = 'View original';
+    if (anchor.url) {
+      anchorLink.href = anchor.url;
+      anchorLink.target = '_blank';
+      anchorLink.rel = 'noopener noreferrer';
+    }
+    anchorBox.append(anchorLabel, author, quote, anchorLink);
+    section.append(anchorBox);
   }
-  anchorBox.append(anchorLabel, author, quote, anchorLink);
-  section.append(anchorBox);
+
+  // Who is posting: avatar + handle, when we know them.
+  const myHandle = meHandle(me);
+  if (myHandle) {
+    const postAs = doc.createElement('p');
+    postAs.className = 'quote-post-as';
+    const av = doc.createElement('span');
+    const myName = typeof me === 'string' ? me : (me?.name || myHandle);
+    av.className = `avatar avatar-h${avatarHue(myHandle)}`;
+    av.textContent = initials(myName);
+    postAs.append(av);
+    const who = doc.createElement('span');
+    who.textContent = `Posting as ${myHandle}`;
+    postAs.append(who);
+    section.append(postAs);
+  }
 
   const label = doc.createElement('label');
   label.className = 'quote-draft-label';
@@ -136,6 +159,7 @@ export function mount(rootEl, ctx = {}) {
   textarea.className = 'quote-draft';
   textarea.rows = 4;
   textarea.value = ''; // starts empty; the composer never writes copy for you
+  textarea.placeholder = 'Say it in your own words…';
   textarea.setAttribute('aria-label', 'Your quote-post draft');
   label.append(textarea);
   section.append(label);
@@ -201,6 +225,11 @@ export function mount(rootEl, ctx = {}) {
   }
 
   function onPostedClick() {
+    // The draft rides along as the second arg so the caller can record
+    // it as the member's attached quote; the URL stays the first arg.
+    const report = (quoteUrl) => {
+      if (typeof onPosted === 'function') onPosted(quoteUrl, textarea.value);
+    };
     const promptFn =
       typeof ctx.prompt === 'function'
         ? () => ctx.prompt('Paste your quote-post URL (optional):')
@@ -208,9 +237,9 @@ export function mount(rootEl, ctx = {}) {
           ? () => globalThis.prompt('Paste your quote-post URL (optional):')
           : null;
     if (promptFn) {
-      confirmPosted({ prompt: promptFn, onPosted });
-    } else if (typeof onPosted === 'function') {
-      onPosted('');
+      confirmPosted({ prompt: promptFn, onPosted: report });
+    } else {
+      report('');
     }
   }
 

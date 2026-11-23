@@ -11,8 +11,9 @@
 //   store = { game, campaigns, me, saveGame, saveCampaigns, saveMe }
 //   campaign = the campaign object to render (frozen V21 shape)
 
-import { addMember, postedCount, encodeCampaignLink } from './campaign.mjs';
+import { addMember, postedCount, encodeCampaignLink, markPosted, relativeTime, initials, avatarHue } from './campaign.mjs';
 import { ringSummary, resolveStore } from './home.mjs';
+import * as quoteComposer from './quote-composer.mjs';
 
 export { addMember, postedCount, ringSummary };
 
@@ -61,6 +62,16 @@ export function mount(rootEl, ctx) {
     const alreadyMember = (campaign.members || []).some(
       (m) => me.handle && m.handle === me.handle,
     );
+    const myStatus = alreadyMember
+      ? (campaign.members || []).find((m) => m.handle === me.handle)?.status
+      : null;
+    // The compose box lives on the page for pending members: composer-first.
+    const showComposer = alreadyMember && myStatus === 'pending';
+    // Anchor post time: the window start is the proxy (the anchor's own
+    // post time is not stored); open-ended campaigns use createdAt.
+    const anchorTime = relativeTime(
+      campaign.window && campaign.window.start ? campaign.window.start : campaign.createdAt,
+    );
     const baseUrl =
       typeof window !== 'undefined' ? window.location.href.split('#')[0] : '';
     const share = encodeCampaignLink(campaign, baseUrl);
@@ -81,14 +92,19 @@ export function mount(rootEl, ctx) {
           ${gameLinks ? `<p class="game-links">${gameLinks}</p>` : ''}
           ${game.tags && game.tags.length ? `<p class="game-tags">${game.tags.map(esc).join(', ')}</p>` : ''}
         </header>
-        <article class="campaign-anchor">
+        <article class="campaign-anchor post-card">
           <h3>${esc(campaign.title)}${campaign.demo ? ' <span class="demo-badge">DEMO</span>' : ''}</h3>
+          <div class="post-head">
+            <span class="avatar avatar-h${avatarHue(campaign.anchorPost.author)}">${esc(initials(campaign.anchorPost.author))}</span>
+            <span class="post-author">${esc(campaign.anchorPost.author)}</span>
+            <span class="post-time">· ${esc(campaign.anchorPost.platform)}${anchorTime ? ` · ${esc(anchorTime)}` : ''}</span>
+          </div>
           <blockquote>&ldquo;${esc(campaign.anchorPost.text)}&rdquo;</blockquote>
-          <p class="anchor-meta">${esc(campaign.anchorPost.author)} · ${esc(campaign.anchorPost.platform)} ·
-            <a href="${esc(campaign.anchorPost.url)}">View original post</a></p>
+          <p class="anchor-meta"><a href="${esc(campaign.anchorPost.url)}">View original post</a></p>
           <p class="campaign-meta">${esc(windowLabel(campaign))} · Posted ${summary.posted}/${summary.total}</p>
           ${meterHtml(summary)}
         </article>
+        ${showComposer ? '<div class="compose-sticky" id="campaign-composer"></div>' : ''}
         <section class="campaign-share">
           <h3>Share this campaign</h3>
           <p>Anyone with this link opens the app straight into this campaign and can join. The link is the invite.</p>
@@ -100,14 +116,19 @@ export function mount(rootEl, ctx) {
           ${
             summary.total
               ? `<ul class="ring-list">${(campaign.members || [])
-                  .map(
-                    (m) => `<li class="ring-member" data-status="${esc(m.status)}">
+                  .map((m) => {
+                    const posted = m.status === 'posted';
+                    const time = posted && m.postedAt ? relativeTime(m.postedAt) : '';
+                    return `<li class="ring-member" data-status="${esc(m.status)}">
+                      <span class="avatar avatar-h${avatarHue(m.handle)}">${esc(initials(m.name || m.handle))}</span>
                       <span class="member-name">${esc(m.name)}</span>
                       <span class="member-handle">${esc(m.handle)}</span>
-                      <span class="member-status">${m.status === 'posted' ? 'Posted' : 'Pending'}</span>
-                      ${m.status === 'posted' && m.quoteUrl ? `<a href="${esc(m.quoteUrl)}">Quote post</a>` : ''}
-                    </li>`,
-                  )
+                      <span class="member-status">${posted ? 'Posted' : 'Pending'}</span>
+                      ${time ? `<span class="member-time">${esc(time)}</span>` : ''}
+                      ${posted && m.quoteUrl ? `<a href="${esc(m.quoteUrl)}">Quote post</a>` : ''}
+                      ${posted && m.quoteText ? `<div class="ring-quote"><blockquote>&ldquo;${esc(m.quoteText)}&rdquo;</blockquote><p class="ring-quote-meta">Quoting ${esc(campaign.anchorPost.author)}${m.quoteUrl ? ` · <a href="${esc(m.quoteUrl)}">View quote</a>` : ''}</p></div>` : ''}
+                    </li>`;
+                  })
                   .join('')}</ul>`
               : '<p class="empty-state">No members yet — be the first to join.</p>'
           }
@@ -180,6 +201,32 @@ export function mount(rootEl, ctx) {
           shareInput.select();
           copyBtn.textContent = 'Select and copy';
         }
+      });
+    }
+    // Embedded compose box for pending members: same component as the
+    // standalone composer route, compact. Posting marks the member posted,
+    // records their draft as the attached quote, and re-renders the page.
+    const composerSlot = rootEl.querySelector('#campaign-composer');
+    if (composerSlot) {
+      quoteComposer.mount(composerSlot, {
+        campaign,
+        me: store.me,
+        compact: true,
+        onPosted: (quoteUrl, draft) => {
+          const updated = markPosted(campaign, me.handle, quoteUrl || undefined);
+          const member = (updated.members || []).find(
+            (mm) => String(mm.handle).trim().toLowerCase() === String(me.handle).trim().toLowerCase(),
+          );
+          if (member && String(draft || '').trim()) member.quoteText = String(draft).trim();
+          const list = [...(store.campaigns || [])];
+          const idx = list.findIndex((c) => c.id === campaign.id);
+          if (idx >= 0) list[idx] = updated;
+          else list.push(updated);
+          store.saveCampaigns(list);
+          store.campaigns = list;
+          campaign.members = updated.members;
+          render();
+        },
       });
     }
   }
