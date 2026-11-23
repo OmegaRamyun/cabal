@@ -12,6 +12,13 @@ import { formatsForDiscovery, usageLabel, normalizeFormat } from './campaign-for
 
 export { postedCount };
 
+// V49: the Campaigns view's create action.
+export const NEW_TEMPLATE_LABEL = "New campaign template";
+export const NEW_TEMPLATE_ROUTE = "#/campaigns/new";
+export const NEW_TEMPLATE_HELP =
+  "A template is a format you write once: the shape of a post and how to disclose it. " +
+  "Save it here and any ring can pick it up and run it in its own words.";
+
 function isHttpUrl(s) {
   if (typeof s !== "string" || !/^https?:\/\//i.test(s.trim())) return false;
   try {
@@ -161,6 +168,17 @@ export function mount(rootEl, ctx = {}) {
     rootEl.appendChild(el(doc, "p",
       "Formats that are catching on. Any ring can pick one up and run it in its own words.",
       "view-lede"));
+    // V49: the create action lives on the view itself, with what it is
+    // and what happens next, so nobody needs the primer to find it.
+    const newBtn = el(doc, "button", NEW_TEMPLATE_LABEL, "primary new-template");
+    newBtn.type = "button";
+    newBtn.addEventListener("click", () => {
+      if (typeof ctx.onNewTemplate === "function") ctx.onNewTemplate();
+      else if (ctx.location) ctx.location.hash = NEW_TEMPLATE_ROUTE;
+      else if (globalThis.location) globalThis.location.hash = NEW_TEMPLATE_ROUTE;
+    });
+    rootEl.appendChild(el(doc, "p", null, "view-create")).appendChild(newBtn);
+    rootEl.appendChild(el(doc, "p", NEW_TEMPLATE_HELP, "view-lede new-template-help"));
     // V48: the honest-limits line travels with any usage count (V46).
     // Shown only once a relay query has been attempted (sortByUsage set).
     if (ctx.sortByUsage && typeof ctx.usageNote === "string" && ctx.usageNote) {
