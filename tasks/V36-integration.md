@@ -1,6 +1,6 @@
 # V36 — Integration: wire V33 intro pages, V34 background, V35 journal into the shell (Dark Souls theme)
 
-Status: in progress (coordinator branch)
+Status: done, merged as v0.2.8 (merge 5a32201, main 3ec0a74); Playwright smoke ALL GREEN, zero console errors (see cabal-bench/smoke-*.png)
 Branch: `task/V36-integration`
 Files owned: `index.html`, `style.css`, `app.js`, `tasks/INDEX.md` (coordinator-only) +
 integration touches: `src/store.mjs` (one KEYS line), `src/gamify.mjs`
