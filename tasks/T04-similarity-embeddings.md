@@ -1,17 +1,25 @@
 # T04 — Similarity gate, MiniLM embeddings (opt-in)
 
-Status: done (merged to main)
+Status: REMOVED (Nov 22, by T11, on Cade's order: "Remove the AI" / "We hashin")
 
-## Goal
+## What happened
 
-Catch paraphrases the lexical gate misses — only when the user opts in,
-only in their browser.
+The embeddings module (`src/embeddings.mjs`, Transformers.js v4 + MiniLM-L6-v2,
+~23 MB download, Web Worker) was deleted along with its tests
+(`tests/t04.test.mjs`). It was never wired into the app — nothing imported it
+except its own tests — so removal changed no live behaviour.
 
-## Files owned
+It was replaced by the hash gate in T03/T11: SimHash + word-3-gram Jaccard,
+zero model, zero download, ~3 µs per comparison. The bench that decided it
+(`~/workspace/cabal-bench/BENCH-hash.md`): SimHash separation +0.218 vs
+MiniLM-L6 +0.110 / L3 +0.176 on the same 11 pairs, and the gate's weak spot
+was never "needs a model" — it was "word trigrams are too coarse for
+280 characters."
 
-- `src/embeddings.mjs`, `tests/t04.test.mjs`
+The original spec is preserved below for the record. Do not resurrect it
+without Cade's word.
 
-## Spec
+## Original spec (superseded)
 
 - Lazy-load Transformers.js v4 (`@huggingface/transformers`, current
   4.3.2) from CDN, only after the user enables it. Never on first load.
@@ -30,14 +38,7 @@ only in their browser.
 - Never auto-post on a pass, never auto-reject on embedding alone
   (same-game copy false-positives).
 
-## Acceptance test
-
-`tests/t04.test.mjs` (node --test): `cosine()` fixtures (identical,
-orthogonal, opposite vectors) and threshold mapping (0.84 warn? no —
-0.84 is review; 0.85 warn; 0.92 block). Model loading itself is a manual
-check: enable it in the browser, confirm the gate fires on a paraphrase.
-
-## Don'ts
+## Original don'ts
 
 - No server-side embeddings, no draft leaves the device. No EmbeddingGemma
   default. No blocking load.

@@ -24,7 +24,6 @@ export function createRegistry() {
 // Section id -> src module file (basename, also the registry name).
 export const MODULE_MAP = [
   { section: 'composer', name: 'intents' },
-  { section: 'similarity', name: 'similarity' },
   { section: 'directory', name: 'match' },
   { section: 'discord', name: 'discord' },
   { section: 'kickstarter', name: 'kickstarter' },
@@ -56,7 +55,39 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   const registry = createRegistry();
   window.Cabal = { modules: registry };
   const start = () =>
-    loadModules(registry, MODULE_MAP, (id) => document.querySelector(`#${id} .mount`));
+    loadModules(registry, MODULE_MAP, (id) => document.querySelector(`#${id} .mount`)).then(() =>
+      wireSimilarityGate(document)
+    );
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
+}
+
+// Wires the hash-based similarity gate into the composer's textareas.
+// Each textarea is scored against the others (same user, cross-platform
+// variants) as the user types; the gate warns only and never blocks posting.
+// The similarity module has no section of its own — it lives in the composer.
+// importer is injectable so this is testable under node.
+export async function wireSimilarityGate(document, importer = (n) => import(`./src/${n}.mjs`)) {
+  const composer = document.querySelector('#composer');
+  if (!composer) return [];
+  const textareas = [...composer.querySelectorAll('textarea')];
+  if (textareas.length === 0) return [];
+  const mod = await importer('similarity');
+  if (typeof mod.mount !== 'function') return [];
+  const labelOf = (ta) => (ta.getAttribute('aria-label') || '').replace(/ post text$/, '') || 'draft';
+  const handles = textareas.map((ta) => {
+    const getDrafts = () =>
+      textareas
+        .filter((other) => other !== ta && other.value.trim())
+        .map((other) => ({ author: labelOf(other), text: other.value }));
+    return mod.mount(composer, { textarea: ta, getDrafts });
+  });
+  // A gate only re-scores on its own textarea's input, but its comparison
+  // set changes when ANY textarea changes — so every input refreshes all
+  // gates. update() is a pure re-render, ~3 µs per gate; double-firing the
+  // own gate's listener is harmless.
+  for (const ta of textareas) {
+    ta.addEventListener('input', () => handles.forEach((h) => h.update()));
+  }
+  return handles;
 }

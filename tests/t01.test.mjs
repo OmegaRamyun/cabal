@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createRegistry, loadModules, MODULE_MAP } from '../app.js';
+import { createRegistry, loadModules, MODULE_MAP, wireSimilarityGate } from '../app.js';
 
 test('register then get returns the module', () => {
   const r = createRegistry();
@@ -61,7 +61,59 @@ test('a broken module is logged and the rest still mount', async () => {
   assert.ok(r.has('good1') && r.has('good2') && !r.has('broken'));
 });
 
-test('module map covers the seven sections', () => {
+test('module map covers the six sections (similarity lives in the composer now)', () => {
   assert.deepEqual(MODULE_MAP.map((m) => m.section),
-    ['composer', 'similarity', 'directory', 'discord', 'kickstarter', 'steam', 'checklist']);
+    ['composer', 'directory', 'discord', 'kickstarter', 'steam', 'checklist']);
+});
+
+test('wireSimilarityGate wires the gate into each composer textarea', async () => {
+  const mkTa = (label, value) => {
+    const listeners = {};
+    return {
+      value,
+      listeners,
+      getAttribute: (k) => (k === 'aria-label' ? label : null),
+      addEventListener: (type, fn) => {
+        (listeners[type] ??= []).push(fn);
+      },
+    };
+  };
+  const tas = [mkTa('X post text', 'hello world'), mkTa('Bluesky post text', ''), mkTa('Threads post text', 'hello world')];
+  const composer = { querySelectorAll: () => tas };
+  const doc = { querySelector: (sel) => (sel === '#composer' ? composer : null) };
+  const mounts = [];
+  const importer = async () => ({
+    mount: (root, opts) => {
+      const handle = {
+        updates: 0,
+        update() {
+          this.updates++;
+        },
+        destroy() {},
+      };
+      mounts.push({ root, opts, handle });
+      return handle;
+    },
+  });
+  const handles = await wireSimilarityGate(doc, importer);
+  assert.equal(handles.length, 3);
+  assert.equal(mounts.length, 3);
+  assert.equal(mounts[0].root, composer);
+  assert.equal(mounts[0].opts.textarea, tas[0]);
+  // X's drafts = the other textareas' contents (empty Bluesky skipped),
+  // labelled by platform so the meter can name the match.
+  assert.deepEqual(mounts[0].opts.getDrafts(), [{ author: 'Threads', text: 'hello world' }]);
+  // Input on one textarea refreshes every gate, not just its own — otherwise
+  // a gate goes stale when another textarea changes.
+  tas[0].listeners.input.forEach((fn) => fn());
+  assert.deepEqual(
+    mounts.map((m) => m.handle.updates),
+    [1, 1, 1]
+  );
+});
+
+test('wireSimilarityGate is a no-op without a composer', async () => {
+  const doc = { querySelector: () => null };
+  const importer = async () => { throw new Error('must not import'); };
+  assert.deepEqual(await wireSimilarityGate(doc, importer), []);
 });

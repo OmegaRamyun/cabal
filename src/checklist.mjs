@@ -2,7 +2,7 @@ export const CHECKLIST_ITEMS = Object.freeze([
   Object.freeze({ id: 'ownWords', label: 'I wrote this in my own words' }),
   Object.freeze({
     id: 'similarityGate',
-    label: 'Similarity gate passed (or I rewrote after a block)',
+    label: 'Similarity gate passed (or I rewrote after a warning)',
   }),
   Object.freeze({
     id: 'disclosure',
