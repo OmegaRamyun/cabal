@@ -63,44 +63,62 @@ describe('campaign checklist key namespacing', () => {
     assert.equal(checklistKey('camp-b'), 'cabal.v2.checklist.camp-b');
   });
 
+  it('namespaces per-post keys under cabal.v2.checklist.<campaignId>.<postId>', () => {
+    assert.equal(
+      checklistKey('camp-a', 'pst-1'),
+      'cabal.v2.checklist.camp-a.pst-1'
+    );
+    assert.notEqual(
+      checklistKey('camp-a', 'pst-1'),
+      checklistKey('camp-a', 'pst-2')
+    );
+    assert.notEqual(
+      checklistKey('camp-a', 'pst-1'),
+      checklistKey('camp-b', 'pst-1')
+    );
+  });
+
   it('two campaigns get different keys', () => {
     assert.notEqual(checklistKey('camp-a'), checklistKey('camp-b'));
     assert.notEqual(
       createCampaignChecklist('camp-a').key,
       createCampaignChecklist('camp-b').key
     );
+    assert.notEqual(
+      createCampaignChecklist('camp-a', 'pst-1').key,
+      createCampaignChecklist('camp-a', 'pst-2').key
+    );
   });
 
   it('two campaigns do not share state', () => {
-    const a = createCampaignChecklist('camp-a');
-    const b = createCampaignChecklist('camp-b');
+    const a = createCampaignChecklist('camp-a', 'pst-1');
+    const b = createCampaignChecklist('camp-b', 'pst-1');
 
-    const aToggled = toggleCampaignChecklistItem(a, 'anchorLink', true);
-    assert.equal(aToggled.state.anchorLink, true);
-    assert.equal(b.state.anchorLink, false);
+    const aToggled = toggleCampaignChecklistItem(a, 'postLink', true);
+    assert.equal(aToggled.state.postLink, true);
+    assert.equal(b.state.postLink, false);
     // The original is untouched too.
-    assert.equal(a.state.anchorLink, false);
+    assert.equal(a.state.postLink, false);
   });
 });
 
 describe('campaign checklist items', () => {
-  it('is the 6 standard items plus the 2 campaign-specific items', () => {
+  it('is the 6 standard items plus the 1 post-specific item', () => {
     const items = campaignChecklistItems(CAMPAIGN_A);
-    assert.equal(items.length, CHECKLIST_ITEMS.length + 2);
+    assert.equal(items.length, CHECKLIST_ITEMS.length + 1);
     const labels = items.map((item) => item.label);
-    assert.ok(labels.includes('Anchor post link works'));
-    assert.ok(labels.includes("Every member's quote is in their own words"));
+    assert.ok(labels.includes("This post's link works"));
     for (const item of CHECKLIST_ITEMS) {
       assert.ok(labels.includes(item.label));
     }
-    assert.equal(CAMPAIGN_CHECKLIST_ITEMS.length, 2);
+    assert.equal(CAMPAIGN_CHECKLIST_ITEMS.length, 1);
   });
 
-  it('starts all unchecked and becomes ready only when all 8 are checked', () => {
-    const checklist = createCampaignChecklist('camp-a');
-    assert.equal(Object.keys(checklist.state).length, 8);
+  it('starts all unchecked and becomes ready only when all 7 are checked', () => {
+    const checklist = createCampaignChecklist('camp-a', 'pst-1');
+    assert.equal(Object.keys(checklist.state).length, 7);
     assert.equal(isCampaignChecklistReady(checklist), false);
-    assert.equal(getCampaignMissingItems(checklist).length, 8);
+    assert.equal(getCampaignMissingItems(checklist).length, 7);
 
     let next = checklist;
     for (const item of campaignChecklistItems(CAMPAIGN_A)) {
@@ -188,26 +206,39 @@ describe('campaign checklist persistence (V36)', () => {
     };
   };
 
-  it('round-trips a campaign checklist through its own key', () => {
+  it('round-trips a per-post checklist through its own key', () => {
     const s = memoryStorage();
-    let cl = loadCampaignChecklistState('camp-a', s);
+    let cl = loadCampaignChecklistState('camp-a', 'pst-1', s);
     assert.equal(isCampaignChecklistReady(cl), false);
     for (const item of campaignChecklistItems()) {
       cl = toggleCampaignChecklistItem(cl, item.id, true);
     }
     saveCampaignChecklistState(cl, s);
-    const reloaded = loadCampaignChecklistState('camp-a', s);
+    const reloaded = loadCampaignChecklistState('camp-a', 'pst-1', s);
     assert.equal(isCampaignChecklistReady(reloaded), true);
-    assert.equal(reloaded.key, 'cabal.v2.checklist.camp-a');
+    assert.equal(reloaded.key, 'cabal.v2.checklist.camp-a.pst-1');
     assert.equal(reloaded.campaignId, 'camp-a');
+    assert.equal(reloaded.postId, 'pst-1');
   });
 
   it('falls back to fresh state on corrupt JSON or missing storage', () => {
     const s = memoryStorage();
-    s.setItem('cabal.v2.checklist.camp-a', '{not json');
-    assert.equal(isCampaignChecklistReady(loadCampaignChecklistState('camp-a', s)), false);
-    assert.equal(isCampaignChecklistReady(loadCampaignChecklistState('camp-a', null)), false);
+    s.setItem('cabal.v2.checklist.camp-a.pst-1', '{not json');
+    assert.equal(
+      isCampaignChecklistReady(
+        loadCampaignChecklistState('camp-a', 'pst-1', s)
+      ),
+      false
+    );
+    assert.equal(
+      isCampaignChecklistReady(
+        loadCampaignChecklistState('camp-a', 'pst-1', null)
+      ),
+      false
+    );
     assert.doesNotThrow(() => saveCampaignChecklistState(null, s));
-    assert.doesNotThrow(() => saveCampaignChecklistState(createCampaignChecklist('camp-a'), null));
+    assert.doesNotThrow(() =>
+      saveCampaignChecklistState(createCampaignChecklist('camp-a', 'pst-1'), null)
+    );
   });
 });
