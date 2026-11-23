@@ -1,0 +1,244 @@
+// V25 — Demo mode: fictional example data, on by default on first load.
+// All demo content is invented. No real games, no real people, no real handles.
+// Store keys match V21 (cabal.v2.*). Reads/writes localStorage directly with
+// try/catch; V21's store module replaces these reads at integration.
+// seedDemo/clearDemo take a storage-like object (getItem/setItem/removeItem,
+// e.g. localStorage or V21's createMemoryStore); when omitted, localStorage
+// is used when available.
+
+export const DEMO_BADGE = "DEMO";
+
+export const DEMO_GAME_NAME = "Starlight Salvage";
+
+const DAY_MS = 86400000;
+
+function isoAt(base, days) {
+  return new Date(base.getTime() + days * DAY_MS).toISOString();
+}
+
+function storage(store) {
+  if (store && typeof store.getItem === "function") return store;
+  try {
+    if (typeof globalThis.localStorage !== "undefined") return globalThis.localStorage;
+  } catch {
+    // No storage available (e.g. private mode); fall through to a no-op store.
+  }
+  return {
+    getItem: () => null,
+    setItem: () => {},
+    removeItem: () => {},
+  };
+}
+
+function read(store, key) {
+  try {
+    return store.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function write(store, key, value) {
+  try {
+    store.setItem(key, value);
+  } catch {
+    // Storage unavailable; demo seeding is best-effort.
+  }
+}
+
+function remove(store, key) {
+  try {
+    store.removeItem(key);
+  } catch {
+    // Ignore.
+  }
+}
+
+export function demoGame() {
+  return {
+    name: DEMO_GAME_NAME,
+    links: { itch: "https://starlight-salvage.itch.io/starlight-salvage" },
+    tags: ["roguelite", "cozy", "space"],
+  };
+}
+
+function member(name, handle, status, quoteUrl) {
+  const m = { name, handle, status };
+  if (quoteUrl) m.quoteUrl = quoteUrl;
+  return m;
+}
+
+function campaign(id, title, anchorPost, window, members, createdAt) {
+  return {
+    id,
+    game: demoGame(),
+    title,
+    anchorPost,
+    window,
+    members,
+    createdAt,
+    demo: true,
+  };
+}
+
+/**
+ * demoCampaigns(now?) — exactly 3 fictional campaigns for Starlight Salvage.
+ * `now` defaults to the current time; pass a fixed Date in tests so the
+ * live/upcoming windows are deterministic.
+ *  1. LIVE "Launch week push" — window covers now, 4 members, 2 posted.
+ *  2. UPCOMING "Demo day push" — window starts tomorrow, 3 members, 0 posted.
+ *  3. POPULAR "Steam Next Fest push" — 6 members, 5 posted.
+ */
+export function demoCampaigns(now = new Date()) {
+  const base = now instanceof Date ? now : new Date(now);
+  const createdAt = base.toISOString();
+  return [
+    campaign(
+      "cmp_demo_launch",
+      "Launch week push",
+      {
+        platform: "x",
+        url: "https://x.com/wrenmakesgames/status/1000000000000000001",
+        text: "Starlight Salvage is out now! I spent two years hauling scrap in a cozy little ship, and today it is yours.",
+        author: "Wren",
+      },
+      { start: isoAt(base, -3), end: isoAt(base, 4) },
+      [
+        member("Moss", "@mossplays", "posted", "https://x.com/mossplays/status/1000000000000000002"),
+        member("Pip", "@pipdraws", "posted", "https://x.com/pipdraws/status/1000000000000000003"),
+        member("June", "@junebakes", "pending"),
+        member("Rook", "@rookdev", "pending"),
+      ],
+      createdAt,
+    ),
+    campaign(
+      "cmp_demo_demoday",
+      "Demo day push",
+      {
+        platform: "x",
+        url: "https://x.com/wrenmakesgames/status/1000000000000000004",
+        text: "Tomorrow we show off the new salvage run at demo day. Come watch me lose a haul to a very rude asteroid.",
+        author: "Wren",
+      },
+      { start: isoAt(base, 1), end: isoAt(base, 8) },
+      [
+        member("Sable", "@sablepixels", "pending"),
+        member("Fern", "@fernfolk", "pending"),
+        member("Rook", "@rookdev", "pending"),
+      ],
+      createdAt,
+    ),
+    campaign(
+      "cmp_demo_nextfest",
+      "Steam Next Fest push",
+      {
+        platform: "x",
+        url: "https://x.com/wrenmakesgames/status/1000000000000000005",
+        text: "Starlight Salvage is in Steam Next Fest! The demo is live all week. Bring a friend, bring a magnet.",
+        author: "Wren",
+      },
+      { start: isoAt(base, -2), end: isoAt(base, 5) },
+      [
+        member("Moss", "@mossplays", "posted", "https://x.com/mossplays/status/1000000000000000006"),
+        member("Pip", "@pipdraws", "posted", "https://x.com/pipdraws/status/1000000000000000007"),
+        member("June", "@junebakes", "posted", "https://x.com/junebakes/status/1000000000000000008"),
+        member("Rook", "@rookdev", "posted", "https://x.com/rookdev/status/1000000000000000009"),
+        member("Sable", "@sablepixels", "posted", "https://x.com/sablepixels/status/1000000000000000010"),
+        member("Fern", "@fernfolk", "pending"),
+      ],
+      createdAt,
+    ),
+  ];
+}
+
+export function demoBadge(campaign) {
+  return campaign && campaign.demo ? DEMO_BADGE : "";
+}
+
+/**
+ * seedDemo(store?, now?) — first load only. Writes the demo game and the
+ * demo campaigns and sets the demo flag to 'on', but only when no
+ * cabal.v2.demo key exists yet. "Me" is deliberately left untouched:
+ * no fictional "you" is ever set. Returns true when it seeded, false
+ * when the flag already existed (real data in place, or already seeded).
+ */
+export function seedDemo(store, now) {
+  const s = storage(store);
+  if (read(s, "cabal.v2.demo") != null) return false;
+  write(s, "cabal.v2.game", JSON.stringify(demoGame()));
+  write(s, "cabal.v2.campaigns", JSON.stringify(demoCampaigns(now)));
+  write(s, "cabal.v2.demo", "on");
+  return true;
+}
+
+/**
+ * clearDemo(store?) — removes every demo:true campaign and the demo game,
+ * sets the demo flag to 'off'. Real (non-demo) campaigns and a real game
+ * are left alone. Returns { removedCampaigns, removedGame }.
+ */
+export function clearDemo(store) {
+  const s = storage(store);
+  let removedCampaigns = 0;
+  let removedGame = false;
+  try {
+    const raw = read(s, "cabal.v2.campaigns");
+    const list = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(list)) {
+      const kept = list.filter((c) => !c || !c.demo);
+      removedCampaigns = list.length - kept.length;
+      write(s, "cabal.v2.campaigns", JSON.stringify(kept));
+    }
+  } catch {
+    // Corrupt campaigns JSON: leave it alone rather than wiping data.
+  }
+  try {
+    const rawGame = read(s, "cabal.v2.game");
+    if (rawGame) {
+      const game = JSON.parse(rawGame);
+      if (game && game.name === DEMO_GAME_NAME) {
+        remove(s, "cabal.v2.game");
+        removedGame = true;
+      }
+    }
+  } catch {
+    // Corrupt game JSON: leave it alone.
+  }
+  write(s, "cabal.v2.demo", "off");
+  return { removedCampaigns, removedGame };
+}
+
+// ---- DOM (mount only) ----
+function el(doc, tag, text, cls) {
+  const n = doc.createElement(tag);
+  if (text != null) n.textContent = text;
+  if (cls) n.className = cls;
+  return n;
+}
+
+/**
+ * mount(rootEl, ctx?) — renders the demo banner. ctx.onClear is called by
+ * "Clear demo data", ctx.onStartFresh by "Start with my own game".
+ * Both callbacks are optional; a missing one leaves its button inert.
+ */
+export function mount(rootEl, ctx = {}) {
+  const doc = rootEl.ownerDocument;
+  rootEl.textContent = "";
+  const banner = el(doc, "div", null, "cabal-demo-banner");
+  banner.appendChild(el(doc, "strong", "DEMO MODE"));
+  banner.appendChild(
+    el(doc, "span", " — fictional example data. None of this is real: the game, the people, and the posts are made up so you can see how Cabal works."),
+  );
+  const clearBtn = el(doc, "button", "Clear demo data");
+  clearBtn.type = "button";
+  clearBtn.addEventListener("click", () => {
+    if (typeof ctx.onClear === "function") ctx.onClear();
+  });
+  const freshBtn = el(doc, "button", "Start with my own game");
+  freshBtn.type = "button";
+  freshBtn.addEventListener("click", () => {
+    if (typeof ctx.onStartFresh === "function") ctx.onStartFresh();
+  });
+  banner.appendChild(clearBtn);
+  banner.appendChild(freshBtn);
+  rootEl.appendChild(banner);
+}
