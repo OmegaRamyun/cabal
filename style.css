@@ -297,6 +297,14 @@ pre {
 
 /* ---- discovery: rows as full-width buttons with lift ---- */
 .discovery-row { list-style: none; margin: 0 0 0.5rem; }
+.format-row-desc { color: var(--pico-muted-color); }
+.format-usage { color: var(--cabal-gold, #c9a24a); font-weight: 600; }
+.format-usage-note { color: var(--pico-muted-color); font-size: 0.9rem; }
+.format-tagline { font-family: var(--cabal-display, Georgia, serif); }
+.format-description { max-width: 60ch; }
+.format-tags { color: var(--pico-muted-color); }
+.format-platform { color: var(--pico-muted-color); margin-right: 0.5rem; }
+.format-preselected { border-left: 3px solid var(--cabal-gold, #c9a24a); padding-left: 0.75rem; }
 .discovery-row-btn {
   width: 100%; text-align: left;
   transition: transform 150ms var(--cabal-ease), box-shadow 150ms var(--cabal-ease),

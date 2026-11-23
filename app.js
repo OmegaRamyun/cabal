@@ -1,10 +1,14 @@
 // Cabal v0.2 — campaign-first shell: router + store wiring + demo seeding.
 // No feature code lives here beyond routing; each view is a src module.
 // Routes (hash-based, no server):
-//   #/                    home — your game dashboard
+//   #/                    home — your game dashboard ("My Rings")
+//   #/rings[/<formatId>]   same dashboard; with a format id, the create
+//                          view opens with that format preselected
 //   #/campaign/<id>       campaign page — whole ring + join + share link
 //   #/composer/<id>       quote composer for that campaign
-//   #/discover            similar + popular campaigns
+//   #/discover            legacy route to the Campaigns view
+//   #/campaigns           Campaigns — blowing-up templates, most-used first
+//   #/format/<id>         one campaign template's page
 //   #/tools               campaign tools (Kickstarter, Steam, Discord, checklist)
 //   #/terms               disclaimers and terms
 //   #/intro[/how|/theory] intro pages — what Cabal is, how it works, the theory
@@ -27,6 +31,9 @@ import * as checklist from './src/checklist.mjs';
 import * as intro from './src/intro.mjs';
 import * as background from './src/background.mjs';
 import * as gamify from './src/gamify.mjs';
+import * as formats from './src/campaign-formats.mjs';
+import * as popularity from './src/popularity.mjs';
+import { mergeSyncedIntoStore } from './src/sync-target.mjs';
 
 const backend = createStore();
 
@@ -95,6 +102,13 @@ export function parseHash(hash = '') {
     return { view: 'composer', campaignId: decodeURIComponent(param) };
   }
   if (view === 'discover') return { view: 'discover' };
+  if (view === 'rings') {
+    return { view: 'rings', formatId: param ? decodeURIComponent(param) : null };
+  }
+  if (view === 'campaigns') return { view: 'campaigns' };
+  if (view === 'format' && param) {
+    return { view: 'format', formatId: decodeURIComponent(param) };
+  }
   if (view === 'tools') return { view: 'tools' };
   if (view === 'terms') return { view: 'terms' };
   if (view === 'intro') {
@@ -109,7 +123,7 @@ export function parseHash(hash = '') {
  * land on Home; Terms lives under the Tools gear menu. Pure, tested.
  */
 export function navItemForView(view = '') {
-  if (view === 'discover') return 'discover';
+  if (view === 'discover' || view === 'campaigns' || view === 'format') return 'discover';
   if (view === 'tools' || view === 'terms') return 'tools';
   return 'home';
 }
@@ -155,6 +169,8 @@ function navigate(view, params = {}) {
     window.location.hash = `#/campaign/${encodeURIComponent(params.campaignId)}`;
   } else if (view === 'composer' && params.campaignId) {
     window.location.hash = `#/composer/${encodeURIComponent(params.campaignId)}`;
+  } else if (view === 'format' && params.formatId) {
+    window.location.hash = `#/format/${encodeURIComponent(params.formatId)}`;
   } else {
     window.location.hash = '#/';
   }
@@ -194,27 +210,32 @@ function renderNotFound(view, id) {
 }
 
 /**
- * renderSyncPanel(campaignId) — the Nostr sync panel (V44) in
+ * renderSyncPanel(campaign) — the Nostr sync panel (V44, V47) in
  * #campaign-extras, a sibling of #view (same pattern as renderHomeExtras:
  * campaign-page.mjs re-renders by overwriting #view's innerHTML, which
  * would wipe anything appended there). Mounted fresh on every campaign
- * route; emptied on other routes by route(). onMerged saves the merged
- * list and re-renders only the campaign page, so the panel keeps its
- * "Synced. N updates merged." message.
+ * route; emptied on other routes by route(). Takes the campaign
+ * findCampaign() already resolved, so static listed campaigns (e.g.
+ * ToonSouls) get a panel too — they stay read-only (no key, Publish
+ * disabled) and are only written to localStorage if a sync actually
+ * changed them. onMerged merges by id (mergeSyncedIntoStore) instead of
+ * replacing the whole stored list, and re-renders only the campaign
+ * page, so the panel keeps its "Synced. N updates merged." message.
  */
-function renderSyncPanel(campaignId) {
+function renderSyncPanel(campaign) {
   const slot = document.querySelector('#campaign-extras');
   if (!slot) return;
   slot.textContent = '';
-  const campaign = store.campaigns.find((c) => c.id === campaignId);
   if (!campaign) return;
+  const campaignId = campaign.id;
+  const original = JSON.parse(JSON.stringify(campaign));
   const view = document.querySelector('#view');
   nostr.mount(slot, {
     campaign,
     getCampaigns: () => store.campaigns,
     me: store.me,
     onMerged: (list) => {
-      store.saveCampaigns(list);
+      store.saveCampaigns(mergeSyncedIntoStore(store.campaigns, list, original));
       // Re-render the page only ({ sync: false }) so the panel keeps its
       // "Synced. N updates merged." message.
       if (view) renderCampaign(view, campaignId, { sync: false });
@@ -254,7 +275,7 @@ function renderCampaign(view, id, opts = {}) {
         }
       },
     });
-    if (opts.sync !== false) renderSyncPanel(campaign.id);
+    if (opts.sync !== false) renderSyncPanel(campaign);
     // Kindled hooks for the inline composers: one textarea per
     // unassisted X/Bluesky post slot. Each watches its own post's text
     // with a per-post draft id, so a kindle lands on the right post.
@@ -330,18 +351,171 @@ function renderComposer(view, id) {
   });
 }
 
-function renderDiscover(view) {
-  return loadStaticCampaigns().then((statics) => {
-    const merged = discovery.mergeLists(statics, store.campaigns);
+let formatsCache = null;
+
+/** loadFormats() — data/formats.json, cached per load like staticCache. */
+async function loadFormats() {
+  if (formatsCache) return formatsCache;
+  try {
+    const res = await fetch('data/formats.json');
+    const data = await res.json();
+    formatsCache = Array.isArray(data.formats) ? data.formats : [];
+  } catch {
+    formatsCache = [];
+  }
+  return formatsCache;
+}
+
+// Template usage, queried once per page load (V46). usageCache is the
+// V46 Map (id -> { rings: Set, assists: n }); usageNoteCache is the
+// honest-limits line shown with any count, or the couldn't-reach line
+// when no relay answered. Null until the first query resolves.
+let usageCache = null;
+let usageNoteCache = null;
+
+async function loadFormatUsage(formatIds) {
+  if (usageCache) return usageCache;
+  try {
+    const configured = nostr.loadRelays(globalThis.localStorage).relays;
+    const relays = configured.length ? configured : [...nostr.DEFAULT_RELAYS];
+    const client = nostr.createRelayClient({ relays });
+    const res = await popularity.queryFormatUsage(client, formatIds, { timeoutMs: 6000 });
+    usageCache = res.usage;
+    usageNoteCache =
+      res.relaysAnswered === 0
+        ? "Couldn't reach the relays — usage counts hidden."
+        : res.relaysAnswered < res.relaysTotal
+          ? `${popularity.popularityNote()} Some relays didn't answer, so counts are partial.`
+          : popularity.popularityNote();
+    return usageCache;
+  } catch {
+    usageCache = new Map();
+    usageNoteCache = "Couldn't reach the relays — usage counts hidden.";
+    return usageCache;
+  }
+}
+
+/**
+ * usageRingCounts(usage) — the seam between V46's usage shape
+ * (Map id -> { rings: Set, assists: n }) and V45's (Map id ->
+ * distinct-ring count, as toUsageMap consumes). Plain numbers pass
+ * through; anything else counts 0. Pure, tested.
+ */
+export function usageRingCounts(usage) {
+  const out = new Map();
+  const entries =
+    usage instanceof Map
+      ? [...usage.entries()]
+      : usage && typeof usage === 'object'
+        ? Object.entries(usage)
+        : [];
+  for (const [id, v] of entries) {
+    if (typeof id !== 'string' || !id) continue;
+    const n = v && v.rings instanceof Set ? v.rings.size : Number.isFinite(v) ? v : 0;
+    out.set(id, n);
+  }
+  return out;
+}
+
+/**
+ * renderCampaigns(view) — the "Campaigns" view (V45/V46): the template
+ * list on top (most-used first once the relay query resolves), the
+ * ring-discovery sections below. #/discover is the legacy route to the
+ * same view. Mounts immediately with local data, then re-mounts with
+ * usage counts when the relay query returns (only if still on this
+ * route). Best-effort: a failed query leaves the unranked view, never
+ * an error.
+ */
+async function renderCampaigns(view) {
+  const formatsList = await loadFormats();
+  const statics = await loadStaticCampaigns();
+  const merged = discovery.mergeLists(statics, store.campaigns);
+  const mountIt = (usage) => {
     view.textContent = '';
     discovery.mount(view, {
       myTags: (store.game && store.game.tags) || [],
       campaigns: merged,
+      formats: formatsList,
+      rings: merged,
+      sortByUsage: usage ? usageRingCounts(usage) : null,
+      usageNote: usage ? usageNoteCache : null,
       navigate: (campaign) => {
         gamify.record('discover', { campaignId: campaign.id });
         window.location.hash = `#/campaign/${encodeURIComponent(campaign.id)}`;
       },
+      navigateFormat: (f) => navigate('format', { formatId: f.id }),
     });
+  };
+  mountIt(usageCache);
+  if (!usageCache) {
+    loadFormatUsage(formatsList.map((f) => f.id)).then(() => {
+      const h = window.location.hash;
+      if (h.startsWith('#/campaigns') || h.startsWith('#/discover')) {
+        mountIt(usageCache);
+      }
+    });
+  }
+}
+
+/**
+ * renderFormat(view, formatId) — one campaign template's page (V45):
+ * tagline, guidance, example uses, rings running it, "Start a ring".
+ * Unknown ids get a not-found message, not a crash.
+ */
+async function renderFormat(view, formatId) {
+  const formatsList = await loadFormats();
+  const format = formatsList.find(
+    (f) => String(f.id).toLowerCase() === String(formatId).toLowerCase(),
+  );
+  view.textContent = '';
+  if (!format) {
+    view.innerHTML = `<section><h2>Format not found</h2><p>No campaign format with id ${esc(formatId)} here. <a href="#/campaigns">Back to Campaigns</a>.</p></section>`;
+    return;
+  }
+  const statics = await loadStaticCampaigns();
+  const rings = discovery.mergeLists(statics, store.campaigns);
+  const mountIt = (usage) => {
+    view.textContent = '';
+    formats.mount(view, {
+      formats: formatsList,
+      formatId: format.id,
+      rings,
+      usage: usage ? usageRingCounts(usage) : null,
+      usageNote: usage ? usageNoteCache : null,
+      navigate: (c) => navigate('campaign', { campaignId: c.id }),
+      startHref: `#/rings/${encodeURIComponent(format.id)}`,
+    });
+  };
+  mountIt(usageCache);
+  if (!usageCache) {
+    loadFormatUsage(formatsList.map((f) => f.id)).then(() => {
+      if (window.location.hash.startsWith(`#/format/${encodeURIComponent(format.id)}`)) {
+        mountIt(usageCache);
+      }
+    });
+  }
+}
+
+/**
+ * renderRings(view, formatId?) — the "My Rings" view is the home
+ * dashboard (V45). With a formatId (from a format page's "Start a
+ * ring" link, `#/rings/<formatId>`), the id is validated against the
+ * loaded formats and handed to home.mount, which opens the create
+ * view with the format preselected. Unknown ids are ignored.
+ */
+async function renderRings(view, formatId) {
+  view.textContent = '';
+  let format = null;
+  if (formatId) {
+    const formatsList = await loadFormats();
+    format =
+      formatsList.find((f) => String(f.id).toLowerCase() === String(formatId).toLowerCase()) ||
+      null;
+  }
+  home.mount(view, {
+    store,
+    navigate,
+    ...(format ? { formatId: format.id, formatTagline: format.tagline } : {}),
   });
 }
 
@@ -493,7 +667,14 @@ async function route() {
       await renderComposer(view, parsed.campaignId);
       break;
     case 'discover':
-      await renderDiscover(view);
+    case 'campaigns':
+      await renderCampaigns(view);
+      break;
+    case 'rings':
+      await renderRings(view, parsed.formatId);
+      break;
+    case 'format':
+      await renderFormat(view, parsed.formatId);
       break;
     case 'tools':
       renderTools(view);

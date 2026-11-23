@@ -58,3 +58,7 @@ harness, other tasks own their test files.
 Coordinator owns the shell (`index.html`, `style.css`, `app.js`), the merge,
 and the end-to-end Playwright check. Tracks build modules + tests only and
 never touch the shell or each other's files.
+| V45 | Rings/Campaigns split: format model, My Rings + Campaigns views, intro section, seed formats | `src/campaign-formats.mjs`, `data/formats.json`, `src/home.mjs`, `src/discovery.mjs`, `src/intro.mjs`, `tests/v45-split.test.mjs`, `tasks/V45-rings-campaigns-split.md`, `version.json` | done | `task/V45-rings-campaigns-split` |
+| V46 | Template popularity via Nostr: relay-event counting, usage sort, honest-limits copy | `src/popularity.mjs`, `tests/v46-popularity.test.mjs`, `tasks/V46-template-popularity.md`, `version.json` | done | `task/V46-template-popularity` |
+| V47 | Browser flags: sync panel on ToonSouls (mechanism + patch), relay defaults (drop nostr.band), full BIP-340 vectors | `src/nostr.mjs`, `src/sync-target.mjs`, `tests/v47-bip340-vectors.test.mjs`, `tests/v47-browser-flags.test.mjs`, `tasks/V47-browser-flags.md`, `version.json` | done | `task/V47-browser-flags` |
+| V48 | Rings/Campaigns integration: merge V45–V47, wire shell (routes, preselected-format creation, popularity into discovery, V47 sync-panel patch, format tag on Nostr events) | `app.js`, `index.html`, `style.css`, `src/nostr.mjs`, `src/home.mjs`, `src/discovery.mjs`, `src/campaign-formats.mjs`, `tests/v48-integration.test.mjs`, `tasks/V48-integration.md`, `tasks/INDEX.md`, `version.json` | done | — (direct, coordinator) |

@@ -161,6 +161,11 @@ export function mount(rootEl, ctx = {}) {
     rootEl.appendChild(el(doc, "p",
       "Formats that are catching on. Any ring can pick one up and run it in its own words.",
       "view-lede"));
+    // V48: the honest-limits line travels with any usage count (V46).
+    // Shown only once a relay query has been attempted (sortByUsage set).
+    if (ctx.sortByUsage && typeof ctx.usageNote === "string" && ctx.usageNote) {
+      rootEl.appendChild(el(doc, "p", ctx.usageNote, "view-lede format-usage-note"));
+    }
     const fmts = formatsForDiscovery(ctx.formats, { usage: ctx.sortByUsage, rings: ctx.rings });
     const fmtList = el(doc, "ul", null, "discovery-formats");
     if (!fmts.length) fmtList.appendChild(el(doc, "li", "No campaign formats yet.", "empty-state"));

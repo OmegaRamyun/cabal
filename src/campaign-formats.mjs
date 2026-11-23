@@ -212,6 +212,10 @@ export function mount(rootEl, ctx = {}) {
   if (f.demo) rootEl.appendChild(el(doc, "span", "DEMO", "demo-badge"));
   const used = usageLabel(f.id, ctx.usage);
   if (used) rootEl.appendChild(el(doc, "p", used, "format-usage"));
+  // V48: the honest-limits line travels with the usage count (V46).
+  if (used && typeof ctx.usageNote === "string" && ctx.usageNote) {
+    rootEl.appendChild(el(doc, "p", ctx.usageNote, "format-usage-note"));
+  }
   if (f.description) rootEl.appendChild(el(doc, "p", f.description, "format-description"));
   if (f.tags.length) rootEl.appendChild(el(doc, "p", f.tags.join(", "), "format-tags"));
 

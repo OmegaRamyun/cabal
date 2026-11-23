@@ -331,7 +331,10 @@ function turnPostCardHtml({ campaign, post }) {
 export function mount(rootEl, ctx) {
   const store = resolveStore(ctx);
   const navigate = (ctx && ctx.navigate) || (() => {});
-  let view = 'dashboard'; // 'dashboard' | 'create'
+  // V48: a preselected format (from a format page's "Start a ring" link,
+  // `#/rings/<formatId>`) opens straight into the create view. The id
+  // was validated against the loaded formats by app.js; home trusts it.
+  let view = ctx && ctx.formatId ? 'create' : 'dashboard'; // 'dashboard' | 'create'
 
   function render() {
     if (!store.game) {
@@ -450,6 +453,7 @@ export function mount(rootEl, ctx) {
       <section class="campaign-create">
         <h2>Start a campaign</h2>
         <p>For <strong>${esc(store.game.name)}</strong>. Start a ring with your founding post &mdash; add more posts as you build, no window, no deadline.</p>
+        ${ctx && ctx.formatId ? `<p class="format-preselected">Running the format: <strong>${esc(ctx.formatTagline || ctx.formatId)}</strong> &mdash; your ring&rsquo;s posts follow it in your own words.</p>` : ''}
         <form id="campaign-create-form">
           <p class="form-error" id="create-errors" hidden></p>
           <label>Campaign title
@@ -540,6 +544,10 @@ export function mount(rootEl, ctx) {
         errEl.hidden = false;
         return;
       }
+      // V48: createCampaign builds a fresh object and drops unknown
+      // fields, so a preselected format is set after creation.
+      // normalizeCampaign keeps it (clone-through) on every later load.
+      if (ctx && ctx.formatId) campaign.formatId = ctx.formatId;
       const campaigns = [...(store.campaigns || []), campaign];
       store.saveCampaigns(campaigns);
       store.campaigns = campaigns;

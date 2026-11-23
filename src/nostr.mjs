@@ -253,6 +253,25 @@ export async function verifyEvent(ev) {
 const stripLocal = (o) => { const { nostr, key, ...rest } = o ?? {}; return rest; };
 
 /**
+ * V48: the format tag — a ring running a campaign format tags its events
+ * so popularity counting (src/popularity.mjs) can find them. The tag is
+ * the queryable handle; the format id also rides in the campaign JSON
+ * content. Same id shape as FORMAT_ID_RE in src/campaign-formats.mjs
+ * (kept local so nostr.mjs stays dependency-free).
+ */
+export function formatTagFor(campaign) {
+  const id = campaign?.formatId;
+  return typeof id === "string" && /^fmt_[a-z0-9]{8}$/.test(id)
+    ? ["t", `cabal:format:${id}`]
+    : null;
+}
+
+const withFormatTag = (tags, campaign) => {
+  const t = formatTagFor(campaign);
+  return t ? [...tags, t] : tags;
+};
+
+/**
  * Campaign event: kind 30078, d = cabal:<id>. Content = campaign v2 JSON
  * (including `createdBy` and `removedMembers` when present) WITHOUT `key`
  * or `nostr`. Signed with the campaign key.
@@ -266,7 +285,7 @@ export function campaignEvent(campaign, { createdAt } = {}) {
   return {
     kind: KIND_CAMPAIGN,
     created_at: createdAt ?? nowSec(),
-    tags: [["d", `cabal:${campaign.id}`], ["t", "cabal"]],
+    tags: withFormatTag([["d", `cabal:${campaign.id}`], ["t", "cabal"]], campaign),
     content: JSON.stringify(c),
   };
 }
@@ -290,7 +309,7 @@ export function postEvent(campaign, post, { campaignPubkey: pkOpt, createdAt } =
   return {
     kind: KIND_NOTE,
     created_at: createdAt ?? nowSec(),
-    tags: [["a", campaignAddress(pk, campaign.id)], ["t", "cabal"], ["cabal-post", post.id]],
+    tags: withFormatTag([["a", campaignAddress(pk, campaign.id)], ["t", "cabal"], ["cabal-post", post.id]], campaign),
     content: JSON.stringify(rest),
   };
 }
@@ -307,6 +326,8 @@ export function encryptionEvent(campaign, post, assist, { campaignPubkey: pkOpt,
   const tags = [];
   if (evId) tags.push(["e", evId]);
   tags.push(["a", campaignAddress(pk, campaign.id)], ["t", "cabal"], ["cabal-post", post.id]);
+  const formatTag = formatTagFor(campaign);
+  if (formatTag) tags.push(formatTag);
   const { handle, note, url, quoteText, status, contributedAt } = stripLocal(assist);
   return {
     kind: KIND_NOTE, created_at: createdAt ?? nowSec(), tags,
