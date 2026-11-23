@@ -1,20 +1,44 @@
-// V23 — Composer fed by the campaign.
-// Quote-post drafts with the original anchor post attached and the
-// similarity gate live as password-meter warnings. Warnings only, NEVER
-// a block: the "Open in X / Bluesky" links stay enabled at every verdict.
+// V23 / V39 — Quote-post composer (two-tier: X / Bluesky only).
+// Quote-post drafts with the target post attached and the similarity gate
+// live as password-meter warnings. Warnings only, NEVER a block: the
+// "Open in X / Bluesky" links stay enabled at every verdict.
 // Never auto-posts, never writes copy for the user. The human taps Post
 // in the platform's own composer; "I posted it" reports back so the ring
-// can mark them posted.
+// can record the assist on that post.
 // Pure functions in the core; DOM only in mount().
 
 import { gate } from './similarity.mjs';
 import { buildIntent } from './intents.mjs';
 import { initials, avatarHue } from './campaign.mjs';
+import { trackRevision } from './gamify.mjs';
 
 export const PLATFORMS = ['x', 'bluesky'];
 const LABELS = { x: 'X', bluesky: 'Bluesky' };
 
-const anchorOf = (campaign) => campaign?.anchorPost ?? {};
+/** True when a platform uses the quote-post composer (X or Bluesky). */
+export function isComposerPlatform(platform) {
+  return PLATFORMS.includes(String(platform ?? '').trim().toLowerCase());
+}
+
+/**
+ * Resolve the target post for the composer: explicit `post` first,
+ * then `campaign.posts[0]`, then legacy `campaign.anchorPost`.
+ */
+export function targetPost(campaign, post) {
+  if (post && typeof post === 'object') return post;
+  if (Array.isArray(campaign?.posts) && campaign.posts.length > 0) {
+    return campaign.posts[0];
+  }
+  return campaign?.anchorPost ?? {};
+}
+
+/** Composite draftId for revision tracking (spec section 8 & 15): `<campaignId>:<postId>`. */
+export function composerDraftId(campaignId, postId) {
+  const cid = String(campaignId ?? '').trim();
+  const pid = String(postId ?? '').trim();
+  if (cid && pid) return `${cid}:${pid}`;
+  return cid || pid || '';
+}
 
 /** Handle of `me`, whether it is a string or a { handle } object. */
 export function meHandle(me) {
@@ -22,27 +46,47 @@ export function meHandle(me) {
 }
 
 /**
- * Texts a draft is scored against: the anchor post first, then any draft
- * text other ring members have attached (members may carry an optional
- * `draft` string; members without one contribute nothing). The member
- * matching `me` is excluded — you are never scored against yourself.
+ * Texts a draft is scored against: the TARGET post's text first, then
+ * other members' `quoteText` on THAT post only (never other posts in the
+ * ring). The assist/member matching `me` (case-insensitive) is excluded —
+ * you are never scored against yourself.
+ * Legacy anchor-only campaigns (no `posts` array and no `assists` on the
+ * target post) fall back to reading `campaign.members` draft/quoteText.
  */
-export function comparisonTexts(campaign, me) {
+export function comparisonTexts(campaign, me, post) {
   const out = [];
-  const anchorText = anchorOf(campaign).text ?? '';
-  if (anchorText) out.push(anchorText);
-  const mine = meHandle(me);
-  for (const m of campaign?.members ?? []) {
-    if (mine && m?.handle && m.handle === mine) continue;
-    const draft = typeof m?.draft === 'string' ? m.draft : m?.quoteText ?? '';
-    if (draft) out.push(draft);
+  const target = targetPost(campaign, post);
+  const postText = target.text ?? '';
+  if (postText) out.push(postText);
+  const mine = meHandle(me).trim().toLowerCase();
+
+  if (Array.isArray(target.assists)) {
+    for (const a of target.assists) {
+      if (mine && a?.handle && String(a.handle).trim().toLowerCase() === mine) {
+        continue;
+      }
+      const qt = typeof a?.quoteText === 'string' ? a.quoteText : '';
+      if (qt) out.push(qt);
+    }
+    return out;
+  }
+
+  // Legacy v1 anchor-only fallback (no posts array on campaign).
+  if (!Array.isArray(campaign?.posts)) {
+    for (const m of campaign?.members ?? []) {
+      if (mine && m?.handle && String(m.handle).trim().toLowerCase() === mine) {
+        continue;
+      }
+      const draft = typeof m?.draft === 'string' ? m.draft : m?.quoteText ?? '';
+      if (draft) out.push(draft);
+    }
   }
   return out;
 }
 
-/** Score a draft against the campaign: gate(draft, [anchor, ...others]). */
-export function scoreDraft(draft, campaign, me) {
-  return gate(draft, comparisonTexts(campaign, me));
+/** Score a draft against the target post: gate(draft, [post.text, ...others on that post]). */
+export function scoreDraft(draft, campaign, me, post) {
+  return gate(draft, comparisonTexts(campaign, me, post));
 }
 
 /**
@@ -62,13 +106,15 @@ export function gateMessage(result) {
 }
 
 /**
- * Platform composer URL for a draft, quoting the anchor post.
- * The anchor URL rides along (X `url` param; Bluesky appended to the text),
- * so the quote-post links the original. Throws when the draft is over the
- * platform limit — buildIntent never truncates.
+ * Platform composer URL for a draft, quoting the target post.
+ * Takes `post` (whose `url` rides the intent); also tolerates a legacy
+ * `campaign` object when `url` is not directly on the third argument.
+ * Throws when the draft is over the platform limit — buildIntent never truncates.
  */
-export function intentUrl(platform, draft, campaign) {
-  return buildIntent(platform, { text: draft ?? '', url: anchorOf(campaign).url ?? '' });
+export function intentUrl(platform, draft, post) {
+  const url =
+    typeof post?.url === 'string' ? post.url : targetPost(post).url ?? '';
+  return buildIntent(platform, { text: draft ?? '', url });
 }
 
 /**
@@ -87,22 +133,37 @@ export function confirmPosted({ prompt, onPosted }) {
 }
 
 /**
- * mount(rootEl, ctx) where ctx = { campaign, me, onPosted(quoteUrl), compact? }.
- * Optional ctx.prompt(promptText) overrides the browser prompt (used by
- * tests); without one, window.prompt is used, and when no prompt exists
- * at all the click reports posted with an empty quote URL.
- * Renders: anchor post (author, text, link), one empty textarea, a live
- * gate warning, "Open in X" / "Open in Bluesky" links, and an
- * "I posted it" button. Returns handles { textarea, warning, links,
- * postedButton, update, destroy }.
- * compact (for embedding on the campaign page): skips the heading and the
- * anchor box — the page already shows the original above the compose box.
+ * mount(rootEl, ctx) where
+ *   ctx = { campaign, post?, me, onPosted(quoteUrl, draft, post), compact?, prompt?, storage?, onKindled? }.
+ * Renders ONLY for X / Bluesky target posts (for other platforms, returns
+ * `{ supported: false, ... }` without modifying `rootEl`).
+ * Renders: target post (author, text, link — unless compact), one empty
+ * textarea, a live gate warning, "Open in X" / "Open in Bluesky" links,
+ * and an "I posted it" button.
  */
 export function mount(rootEl, ctx = {}) {
   const { campaign, me, onPosted } = ctx;
+  const post = targetPost(campaign, ctx.post);
+  const draftId = composerDraftId(campaign?.id, post?.id);
+
+  // Two-tier rule (spec section 8): composer renders ONLY for x/bluesky posts.
+  if (post.platform && !isComposerPlatform(post.platform)) {
+    return {
+      supported: false,
+      post,
+      draftId,
+      textarea: null,
+      warning: null,
+      links: {},
+      postedButton: null,
+      anchorBox: null,
+      update() {},
+      destroy() {},
+    };
+  }
+
   const compact = ctx.compact === true;
   const doc = rootEl.ownerDocument;
-  const anchor = anchorOf(campaign);
 
   const section = doc.createElement('section');
   section.className = 'quote-composer';
@@ -110,7 +171,7 @@ export function mount(rootEl, ctx = {}) {
   let anchorBox = null;
   if (!compact) {
     const heading = doc.createElement('h3');
-    heading.textContent = 'Quote-post the announcement';
+    heading.textContent = 'Quote-post this update';
     section.append(heading);
 
     anchorBox = doc.createElement('div');
@@ -120,15 +181,15 @@ export function mount(rootEl, ctx = {}) {
     anchorLabel.textContent = 'Original post';
     const author = doc.createElement('p');
     author.className = 'quote-anchor-author';
-    author.textContent = anchor.author ? `by ${anchor.author}` : '';
+    author.textContent = post.author ? `by ${post.author}` : '';
     const quote = doc.createElement('blockquote');
     quote.className = 'quote-anchor-text';
-    quote.textContent = anchor.text ?? '';
+    quote.textContent = post.text ?? '';
     const anchorLink = doc.createElement('a');
     anchorLink.className = 'quote-anchor-link';
-    anchorLink.textContent = 'View original';
-    if (anchor.url) {
-      anchorLink.href = anchor.url;
+    anchorLink.textContent = 'View post';
+    if (post.url) {
+      anchorLink.href = post.url;
       anchorLink.target = '_blank';
       anchorLink.rel = 'noopener noreferrer';
     }
@@ -196,13 +257,24 @@ export function mount(rootEl, ctx = {}) {
 
   rootEl.append(section);
 
+  // Per-post revision tracking (spec section 8 & 15): draftId = `${campaignId}:${postId}`.
+  let revisionTracker = null;
+  if (campaign?.id && post?.id) {
+    revisionTracker = trackRevision(textarea, {
+      anchorText: post.text ?? '',
+      draftId,
+      storage: ctx.storage,
+      onKindled: ctx.onKindled,
+    });
+  }
+
   function update() {
     const draft = textarea.value;
     if (!draft.trim()) {
       warning.dataset.verdict = 'pass';
       warning.textContent = 'Write your quote-post in your own words — the gate checks it as you type.';
     } else {
-      const result = scoreDraft(draft, campaign, me);
+      const result = scoreDraft(draft, campaign, me, post);
       const msg = gateMessage(result);
       warning.dataset.verdict = msg.verdict;
       warning.textContent = msg.text;
@@ -213,7 +285,7 @@ export function mount(rootEl, ctx = {}) {
     let limitMessage = '';
     for (const platform of PLATFORMS) {
       try {
-        links[platform].href = intentUrl(platform, draft, campaign);
+        links[platform].href = intentUrl(platform, draft, post);
         links[platform].removeAttribute('aria-disabled');
       } catch (err) {
         links[platform].removeAttribute('href');
@@ -226,9 +298,10 @@ export function mount(rootEl, ctx = {}) {
 
   function onPostedClick() {
     // The draft rides along as the second arg so the caller can record
-    // it as the member's attached quote; the URL stays the first arg.
+    // it as the assist's quoteText (the Enscryption receipt for x/bluesky);
+    // the URL stays the first arg, and the target post is the third arg.
     const report = (quoteUrl) => {
-      if (typeof onPosted === 'function') onPosted(quoteUrl, textarea.value);
+      if (typeof onPosted === 'function') onPosted(quoteUrl, textarea.value, post);
     };
     const promptFn =
       typeof ctx.prompt === 'function'
@@ -248,6 +321,9 @@ export function mount(rootEl, ctx = {}) {
   update();
 
   return {
+    supported: true,
+    post,
+    draftId,
     textarea,
     warning,
     links,
@@ -257,6 +333,7 @@ export function mount(rootEl, ctx = {}) {
     destroy() {
       textarea.removeEventListener('input', update);
       postedButton.removeEventListener('click', onPostedClick);
+      if (revisionTracker) revisionTracker.destroy();
       section.remove();
     },
   };

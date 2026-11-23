@@ -83,37 +83,43 @@ export function getChecklistSummary(state) {
   };
 }
 
-// --- v0.2: per-campaign checklist state (V26) ---
+// --- v0.2: per-post checklist state (V26 / V39) ---
 
 export const CAMPAIGN_CHECKLIST_STORAGE_PREFIX = 'cabal.v2.checklist.';
 
 export const CAMPAIGN_CHECKLIST_ITEMS = Object.freeze([
-  Object.freeze({ id: 'anchorLink', label: 'Anchor post link works' }),
-  Object.freeze({
-    id: 'ownWordsEveryMember',
-    label: "Every member's quote is in their own words",
-  }),
+  Object.freeze({ id: 'postLink', label: "This post's link works" }),
 ]);
 
 const CAMPAIGN_CHECKLIST_IDS = new Set(
   CAMPAIGN_CHECKLIST_ITEMS.map((item) => item.id)
 );
 
-/**
- * Storage key for one campaign's checklist state. Two campaigns never
- * share a key, so their states never collide.
- */
-export function checklistKey(campaignId) {
-  const id = String(campaignId ?? '')
+function sanitizeKeySegment(value) {
+  return String(value ?? '')
     .trim()
     .replace(/[^A-Za-z0-9_-]/g, '-');
-  return `${CAMPAIGN_CHECKLIST_STORAGE_PREFIX}${id}`;
 }
 
 /**
- * The checklist items for a campaign: the 6 standard pre-post items plus
- * the campaign-specific items. `campaign` is accepted for future
- * per-campaign variance; the item set is the same for every campaign today.
+ * Storage key for one post's checklist state:
+ * `cabal.v2.checklist.<campaignId>.<postId>`.
+ * When `postId` is omitted/empty, returns the legacy campaign key
+ * `cabal.v2.checklist.<campaignId>` (read-only compat; new writes
+ * always include `postId`).
+ */
+export function checklistKey(campaignId, postId) {
+  const cid = sanitizeKeySegment(campaignId);
+  const pid = sanitizeKeySegment(postId);
+  if (pid) {
+    return `${CAMPAIGN_CHECKLIST_STORAGE_PREFIX}${cid}.${pid}`;
+  }
+  return `${CAMPAIGN_CHECKLIST_STORAGE_PREFIX}${cid}`;
+}
+
+/**
+ * The checklist items for a post: the 6 standard pre-post items plus
+ * `postLink` ("This post's link works") = 7 items.
  */
 export function campaignChecklistItems(campaign) {
   void campaign;
@@ -130,21 +136,30 @@ function createCampaignChecklistState(initial = {}) {
 }
 
 /**
- * Create a fresh per-campaign checklist: `{ campaignId, key, state }`.
- * `state` covers all 8 campaign checklist items, all unchecked by default.
- * Each call returns an independent state object — two campaigns never
- * share state.
+ * Create a fresh per-post checklist: `{ campaignId, postId, key, state }`.
+ * `state` covers all 7 post checklist items, all unchecked by default.
+ * Accepts `(campaignId, postId, initial?)` or legacy `(campaignId, initial?)`
+ * when the second argument is a plain state object.
  */
-export function createCampaignChecklist(campaignId, initial = {}) {
+export function createCampaignChecklist(campaignId, postId, initial) {
+  let resolvedPostId = postId;
+  let resolvedInitial = initial;
+  if (postId && typeof postId === 'object') {
+    resolvedInitial = postId;
+    resolvedPostId = '';
+  }
+  const cid = String(campaignId ?? '');
+  const pid = String(resolvedPostId ?? '').trim();
   return {
-    campaignId: String(campaignId ?? ''),
-    key: checklistKey(campaignId),
-    state: createCampaignChecklistState(initial),
+    campaignId: cid,
+    ...(pid ? { postId: pid } : {}),
+    key: checklistKey(cid, pid),
+    state: createCampaignChecklistState(resolvedInitial),
   };
 }
 
 /**
- * Return a new campaign checklist with `id` updated, ignoring unknown ids.
+ * Return a new campaign/post checklist with `id` updated, ignoring unknown ids.
  */
 export function toggleCampaignChecklistItem(checklist, id, checked) {
   const source =
@@ -162,7 +177,7 @@ export function toggleCampaignChecklistItem(checklist, id, checked) {
 }
 
 /**
- * Return true iff all 8 campaign checklist items are checked.
+ * Return true iff all 7 post checklist items are checked.
  */
 export function isCampaignChecklistReady(checklist) {
   const state = createCampaignChecklistState(
@@ -174,7 +189,7 @@ export function isCampaignChecklistReady(checklist) {
 }
 
 /**
- * Return the array of unchecked `{ id, label }` campaign items, in order.
+ * Return the array of unchecked `{ id, label }` post checklist items, in order.
  */
 export function getCampaignMissingItems(checklist) {
   const state = createCampaignChecklistState(
@@ -282,32 +297,57 @@ function resolveChecklistStorage(storage) {
 }
 
 /**
- * Load a campaign's checklist from storage (own key only,
- * `cabal.v2.checklist.<id>`). Returns the { campaignId, key, state }
- * object — fresh (all unchecked) when nothing is stored or the stored
- * JSON is corrupt. Tolerates a bare state object as well as the full
- * { campaignId, key, state } shape.
+ * Load a post's checklist from storage (own key only,
+ * `cabal.v2.checklist.<campaignId>.<postId>`, or legacy
+ * `cabal.v2.checklist.<campaignId>` when `postId` is omitted).
+ * Accepts `(campaignId, postId, storage)` or legacy `(campaignId, storage)`.
+ * Returns `{ campaignId, postId?, key, state }` — fresh (all unchecked)
+ * when nothing is stored or the stored JSON is corrupt.
  */
-export function loadCampaignChecklistState(campaignId, storage) {
-  const s = resolveChecklistStorage(storage);
+export function loadCampaignChecklistState(campaignId, postId, storage) {
+  let resolvedPostId = postId;
+  let resolvedStorage = storage;
+  if (
+    (postId && typeof postId === 'object') ||
+    (arguments.length === 2 && postId === null)
+  ) {
+    resolvedStorage = postId;
+    resolvedPostId = undefined;
+  }
+  const s = resolveChecklistStorage(resolvedStorage);
   let stored = null;
   try {
-    const raw = s ? s.getItem(checklistKey(campaignId)) : null;
+    const raw = s ? s.getItem(checklistKey(campaignId, resolvedPostId)) : null;
     stored = raw ? JSON.parse(raw) : null;
   } catch {
     stored = null;
   }
   const initial =
-    stored && typeof stored === "object" ? (stored.state ?? stored) : {};
-  return createCampaignChecklist(campaignId, initial);
+    stored && typeof stored === 'object' ? (stored.state ?? stored) : {};
+  return createCampaignChecklist(campaignId, resolvedPostId, initial);
 }
 
-/** Save a campaign checklist object to its own storage key. */
-export function saveCampaignChecklistState(checklist, storage) {
-  const s = resolveChecklistStorage(storage);
+/**
+ * Save a per-post checklist object to its own storage key.
+ * Accepts `(checklist, storage)` (reading `checklist.postId`) or
+ * `(checklist, postId, storage)`.
+ */
+export function saveCampaignChecklistState(checklist, postIdOrStorage, maybeStorage) {
+  let resolvedPostId = checklist?.postId;
+  let resolvedStorage = postIdOrStorage;
+  if (typeof postIdOrStorage === 'string') {
+    resolvedPostId = postIdOrStorage;
+    resolvedStorage = maybeStorage;
+  }
+  const s = resolveChecklistStorage(resolvedStorage);
   try {
     if (s && checklist && checklist.campaignId) {
-      s.setItem(checklistKey(checklist.campaignId), JSON.stringify(checklist));
+      const pid = String(resolvedPostId ?? '').trim();
+      const key = checklistKey(checklist.campaignId, pid || undefined);
+      const toSave = pid
+        ? { ...checklist, postId: pid, key }
+        : { ...checklist, key };
+      s.setItem(key, JSON.stringify(toSave));
     }
   } catch { /* ignore storage errors */ }
 }
@@ -334,15 +374,18 @@ function saveVoiceCardToStorage(entries) {
 
 /**
  * Mount the pre-post checklist and local Voice Card UI into `rootEl`.
- * Optional ctx (V36, additive — no ctx means the v0.1 in-memory 6-item
+ * Optional ctx (V36/V39, additive — no ctx means the v0.1 in-memory 6-item
  * list, exactly as before):
- *   campaignId — per-campaign mode: the 8-item checklist, persisted
- *     under `cabal.v2.checklist.<id>`.
- *   storage — storage-like object for the campaign state (tests);
+ *   campaignId — per-post mode: the 7-item checklist, persisted
+ *     under `cabal.v2.checklist.<campaignId>.<postId>`.
+ *   postId — the post within the campaign (new writes always include it;
+ *     when omitted, falls back to the legacy campaign key).
+ *   storage — storage-like object for the checklist state (tests);
  *     defaults to localStorage.
- *   onReadyChange(ready, checklist) — called when campaign readiness
- *     flips (and once on mount with the loaded state); the field
- *     journal's Rest Point listens here.
+ *   onReadyChange(ready, info) — called when post checklist readiness
+ *     flips (and once on mount with the loaded state); receives
+ *     `{ campaignId, postId, state }` so the caller can record "rest"
+ *     with `{ campaignId, postId }`.
  */
 export function mount(rootEl, ctx = {}) {
   if (!rootEl) {
@@ -351,11 +394,12 @@ export function mount(rootEl, ctx = {}) {
 
   const doc = rootEl.ownerDocument;
   const campaignId = ctx.campaignId ? String(ctx.campaignId).trim() : "";
+  const postId = ctx.postId ? String(ctx.postId).trim() : "";
   const isCampaign = campaignId.length > 0;
   const storage = resolveChecklistStorage(ctx.storage);
   const items = isCampaign ? campaignChecklistItems() : CHECKLIST_ITEMS;
   let campaignChecklist = isCampaign
-    ? loadCampaignChecklistState(campaignId, storage)
+    ? loadCampaignChecklistState(campaignId, postId || undefined, storage)
     : null;
   let checklistState = isCampaign
     ? createCampaignChecklistState(campaignChecklist.state)
@@ -447,7 +491,7 @@ export function mount(rootEl, ctx = {}) {
   resetBtn.style.minWidth = '44px';
   resetBtn.addEventListener('click', () => {
     if (isCampaign) {
-      campaignChecklist = createCampaignChecklist(campaignId);
+      campaignChecklist = createCampaignChecklist(campaignId, postId || undefined);
       checklistState = createCampaignChecklistState(campaignChecklist.state);
       saveCampaignChecklistState(campaignChecklist, storage);
     } else {
@@ -490,7 +534,11 @@ export function mount(rootEl, ctx = {}) {
     }
     if (isCampaign && typeof ctx.onReadyChange === 'function' && ready !== prevReady) {
       prevReady = ready;
-      ctx.onReadyChange(ready, { state: checklistState });
+      ctx.onReadyChange(ready, {
+        campaignId,
+        ...(postId ? { postId } : {}),
+        state: checklistState,
+      });
     }
   }
 

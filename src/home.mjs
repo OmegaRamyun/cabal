@@ -1,19 +1,17 @@
-// Cabal v0.2 — Home: your game dashboard (V22).
+// Cabal v0.2 — Home: your game dashboard (V22 / V39 sustained ring).
 //
 // First open asks one question ("What's your game?"), then the app becomes
-// that game's dashboard: live campaign, your turn, your rings, start a
-// campaign.
-//
-// Campaign helpers (postedCount, createCampaign, ...) live in V21's
-// src/campaign.mjs and are re-exported here. The localStorage fallback in
-// resolveStore is a safety net; the shell passes V21's store.
+// that game's dashboard: live campaign (by latest activity, no window),
+// your turn (unassisted posts newest first across your rings), your rings,
+// start a campaign.
 //
 // Mount contract: mount(rootEl, ctx) where
 //   ctx = { store, navigate(view, params), campaign? }
 //   store = { game, campaigns, me, saveGame, saveCampaigns, saveMe }
-//           (plain object with functions the shell provides)
 //   navigate(view, params) switches view ('campaign', 'composer', ...)
 // In tests, call the exported pure helpers with plain objects.
+
+import * as campaignModel from './campaign.mjs';
 
 export const STORE_KEYS = {
   game: 'cabal.v2.game',
@@ -21,6 +19,28 @@ export const STORE_KEYS = {
   me: 'cabal.v2.me',
   demo: 'cabal.v2.demo',
 };
+
+const PLATFORM_LABELS = Object.freeze({
+  x: 'X',
+  bluesky: 'Bluesky',
+  threads: 'Threads',
+  reddit: 'Reddit',
+  instagram: 'Instagram',
+  tiktok: 'TikTok',
+  youtube: 'YouTube',
+  other: 'Other',
+});
+
+// Re-export model helpers (pendingMembers removed per spec section 3b).
+export const {
+  postedCount,
+  isLive,
+  isUpcoming,
+  addMember,
+  createCampaign,
+} = campaignModel;
+
+const { relativeTime, initials, avatarHue } = campaignModel;
 
 // ---------------------------------------------------------------- pure ---
 
@@ -46,58 +66,167 @@ export function validateGameSetup(game) {
   return errors;
 }
 
-// Campaign helpers live in V21's src/campaign.mjs — imported here and
-// re-exported so campaign-page.mjs and the tests keep working.
-import {
-  postedCount,
-  pendingMembers,
-  isLive,
-  isUpcoming,
-  addMember,
-  createCampaign,
-  relativeTime,
-  initials,
-  avatarHue,
-} from './campaign.mjs';
-
-export { postedCount, pendingMembers, isLive, isUpcoming, addMember, createCampaign };
-
-/** { posted, total, pending } for a campaign's ring. */
-export function ringSummary(campaign) {
-  const members = campaign.members || [];
-  const posted = postedCount(campaign);
-  return { posted, total: members.length, pending: members.length - posted };
+function handleKey(me) {
+  const h = typeof me === 'string' ? me : me?.handle;
+  return String(h ?? '').trim().toLowerCase();
 }
 
-/** First live campaign (in list order), or null. */
-export function liveCampaign(campaigns, now = new Date()) {
-  return (campaigns || []).find((c) => isLive(c, now)) || null;
+function toTimestamp(iso) {
+  const t = Date.parse(iso ?? '');
+  return Number.isNaN(t) ? 0 : t;
+}
+
+function postsOf(campaign) {
+  if (Array.isArray(campaign?.posts) && campaign.posts.length > 0) {
+    return campaign.posts;
+  }
+  return [];
 }
 
 /**
- * Campaigns where me is a pending member — the quote-posts still owed.
- * me is matched by handle. No me, no turn.
+ * Newest post by createdAt, or null (delegates to V38 campaignModel.latestPost
+ * when available).
  */
-export function yourTurn(campaigns, me) {
-  if (!me || !me.handle) return [];
+export function latestPost(campaign) {
+  if (typeof campaignModel.latestPost === 'function') {
+    return campaignModel.latestPost(campaign);
+  }
+  const posts = postsOf(campaign);
+  if (posts.length === 0) return campaign?.anchorPost ?? null;
+  let best = posts[0];
+  let bestTime = toTimestamp(best.createdAt);
+  for (let i = 1; i < posts.length; i++) {
+    const t = toTimestamp(posts[i].createdAt);
+    if (t >= bestTime) {
+      best = posts[i];
+      bestTime = t;
+    }
+  }
+  return best;
+}
+
+/**
+ * ISO timestamp of the newest post OR newest assist, or campaign.createdAt
+ * (delegates to V38 campaignModel.latestActivity when available).
+ */
+export function latestActivity(campaign) {
+  if (typeof campaignModel.latestActivity === 'function') {
+    return campaignModel.latestActivity(campaign);
+  }
+  if (!campaign || typeof campaign !== 'object') return '';
+  let bestIso = campaign.createdAt || '';
+  let bestTime = toTimestamp(bestIso);
+  for (const p of postsOf(campaign)) {
+    const pt = toTimestamp(p.createdAt);
+    if (pt > bestTime) {
+      bestTime = pt;
+      bestIso = p.createdAt;
+    }
+    for (const a of p.assists || []) {
+      const at = toTimestamp(a.contributedAt);
+      if (at > bestTime) {
+        bestTime = at;
+        bestIso = a.contributedAt;
+      }
+    }
+  }
+  return bestIso;
+}
+
+/**
+ * Posts in `campaign` (newest first) with no assist from `handle`
+ * (delegates to V38 campaignModel.unassistedPostsFor when available).
+ */
+export function unassistedPostsFor(campaign, handle) {
+  if (typeof campaignModel.unassistedPostsFor === 'function') {
+    return campaignModel.unassistedPostsFor(campaign, handle);
+  }
+  const target = handleKey(handle);
+  if (!target || !campaign) return [];
+  const posts = postsOf(campaign);
+  if (posts.length === 0) return [];
+  return posts
+    .map((post, idx) => ({ post, idx }))
+    .filter(
+      ({ post }) =>
+        handleKey(post.author) !== target &&
+        !(post.assists || []).some((a) => handleKey(a?.handle) === target),
+    )
+    .sort((a, b) => {
+      const diff = toTimestamp(b.post.createdAt) - toTimestamp(a.post.createdAt);
+      return diff !== 0 ? diff : b.idx - a.idx;
+    })
+    .map(({ post }) => post);
+}
+
+/** { posted, total, pending } for a campaign's ring. */
+export function ringSummary(campaign) {
+  const members = campaign?.members || [];
+  const posted = postedCount(campaign);
+  return { posted, total: members.length, pending: Math.max(0, members.length - posted) };
+}
+
+/** Most recently active live campaign, or null. */
+export function liveCampaign(campaigns, now = new Date()) {
+  const live = (campaigns || []).filter((c) => isLive(c, now));
+  if (live.length === 0) return null;
+  return live
+    .map((c, idx) => ({ c, idx, t: toTimestamp(latestActivity(c)) }))
+    .sort((a, b) => (b.t !== a.t ? b.t - a.t : a.idx - b.idx))[0].c;
+}
+
+/** Campaigns I'm a member of — "your rings". No me: all. */
+export function myCampaigns(campaigns, me) {
+  const mine = handleKey(me);
+  if (!mine) return [...(campaigns || [])];
   return (campaigns || []).filter((c) =>
-    (c.members || []).some(
-      (m) => m.handle === me.handle && m.status !== 'posted',
-    ),
+    (c.members || []).some((m) => handleKey(m?.handle) === mine),
   );
 }
 
-/** Campaigns I'm a member of (any status) — "your rings". No me: all. */
-export function myCampaigns(campaigns, me) {
-  if (!me || !me.handle) return [...(campaigns || [])];
-  return (campaigns || []).filter((c) =>
-    (c.members || []).some((m) => m.handle === me.handle),
-  );
+/**
+ * Sustained-ring "your turn": all unassisted posts across my campaigns,
+ * newest first by post.createdAt. Returns `Array<{ campaign, post }>`.
+ */
+export function yourTurnPosts(campaigns, me) {
+  const mine = handleKey(me);
+  if (!mine) return [];
+  const items = [];
+  for (const campaign of myCampaigns(campaigns, me)) {
+    for (const post of unassistedPostsFor(campaign, mine)) {
+      items.push({ campaign, post });
+    }
+  }
+  return items
+    .map((item, idx) => ({ item, idx }))
+    .sort((a, b) => {
+      const diff =
+        toTimestamp(b.item.post.createdAt) - toTimestamp(a.item.post.createdAt);
+      return diff !== 0 ? diff : a.idx - b.idx;
+    })
+    .map(({ item }) => item);
+}
+
+/**
+ * Campaigns where me has unassisted posts (v2), or is a pending member
+ * (legacy v1 compat). No me, no turn.
+ */
+export function yourTurn(campaigns, me) {
+  const mine = handleKey(me);
+  if (!mine) return [];
+  return myCampaigns(campaigns, me).filter((c) => {
+    if (Array.isArray(c.posts) && c.posts.length > 0) {
+      return unassistedPostsFor(c, mine).length > 0;
+    }
+    return (c.members || []).some(
+      (m) => handleKey(m?.handle) === mine && m.status !== 'posted',
+    );
+  });
 }
 
 // ------------------------------------------------------- localStorage ---
 
-/** Temporary fallback until V21's store module lands: read localStorage
+/** Temporary fallback until store module is passed: read localStorage
  *  directly with try/catch, return a store-shaped object. Node-safe. */
 export function loadLocalStore() {
   const read = (key, fallback) => {
@@ -146,23 +275,13 @@ function esc(s) {
     .replace(/"/g, '&quot;');
 }
 
-function fmtDate(iso) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? esc(iso) : d.toLocaleDateString();
-}
-
-function windowLabel(campaign) {
-  const w = campaign.window;
-  if (!w) return 'Open-ended — no window';
-  if (w.start && w.end) return `${fmtDate(w.start)} – ${fmtDate(w.end)}`;
-  if (w.start) return `From ${fmtDate(w.start)}`;
-  if (w.end) return `Until ${fmtDate(w.end)}`;
-  return 'Open-ended — no window';
-}
-
 function demoBadge(campaign) {
   return campaign.demo ? ' <span class="demo-badge">DEMO</span>' : '';
+}
+
+function platformLabel(platform) {
+  const key = String(platform ?? '').trim().toLowerCase();
+  return PLATFORM_LABELS[key] || 'Other';
 }
 
 function gameLinksHtml(game) {
@@ -174,27 +293,37 @@ function gameLinksHtml(game) {
   return out.join(' · ');
 }
 
-function meterHtml(s) {
-  const pct = s.total ? Math.round((s.posted / s.total) * 100) : 0;
-  return `<div class="ring-progress" role="progressbar" aria-valuenow="${s.posted}" aria-valuemin="0" aria-valuemax="${s.total}" aria-label="Posted ${s.posted} of ${s.total}"><div class="ring-progress-fill" style="width:${pct}%"></div></div>`;
-}
-
-function campaignCardHtml(campaign, { showTurnButton = false } = {}) {
-  const s = ringSummary(campaign);
-  const anchorTime = relativeTime(
-    campaign.window && campaign.window.start ? campaign.window.start : campaign.createdAt,
-  );
+function campaignCardHtml(campaign) {
+  const latest = latestPost(campaign) || campaign.anchorPost || {};
+  const author = latest.author || '';
+  const activity = relativeTime(latestActivity(campaign));
+  const memberCount = (campaign.members || []).length;
+  const ringLabel = memberCount === 1 ? '1 dev in ring' : `${memberCount} devs in ring`;
   return `<article class="campaign-card" data-campaign-id="${esc(campaign.id)}">
     <div class="post-head">
-      <span class="avatar avatar-h${avatarHue(campaign.anchorPost.author)}">${esc(initials(campaign.anchorPost.author))}</span>
-      <span class="post-author">${esc(campaign.anchorPost.author)}</span>
-      ${anchorTime ? `<span class="post-time">· ${esc(anchorTime)}</span>` : ''}
+      <span class="avatar avatar-h${avatarHue(author)}">${esc(initials(latest.authorName || author))}</span>
+      <span class="post-author">${esc(author)}</span>
+      ${latest.platform ? `<span class="post-time">· ${esc(platformLabel(latest.platform))}</span>` : ''}
+      ${activity ? `<span class="post-time">· Active ${esc(activity)}</span>` : ''}
     </div>
     <h3><a href="#" data-open-campaign="${esc(campaign.id)}">${esc(campaign.title)}</a>${demoBadge(campaign)}</h3>
-    <p class="anchor-preview">&ldquo;${esc(campaign.anchorPost.text)}&rdquo;</p>
-    <p class="campaign-meta">${esc(windowLabel(campaign))} · Posted ${s.posted}/${s.total}</p>
-    ${meterHtml(s)}
-    ${showTurnButton ? `<button type="button" data-open-composer="${esc(campaign.id)}">Open quote composer</button>` : ''}
+    ${latest.text ? `<p class="anchor-preview">&ldquo;${esc(latest.text)}&rdquo;</p>` : ''}
+    <p class="campaign-meta">${esc(ringLabel)}${activity ? ` · Latest activity ${esc(activity)}` : ''}</p>
+  </article>`;
+}
+
+function turnPostCardHtml({ campaign, post }) {
+  const time = relativeTime(post.createdAt);
+  const author = post.author || '';
+  return `<article class="campaign-card turn-post-card" data-campaign-id="${esc(campaign.id)}" data-post-id="${esc(post.id)}">
+    <div class="post-head">
+      <span class="avatar avatar-h${avatarHue(author)}">${esc(initials(post.authorName || author))}</span>
+      <span class="post-author">${esc(author)}</span>
+      <span class="post-time">· ${esc(platformLabel(post.platform))}${time ? ` · ${esc(time)}` : ''}</span>
+    </div>
+    <h3><a href="#" data-open-campaign="${esc(campaign.id)}">${esc(campaign.title)}</a>${demoBadge(campaign)}</h3>
+    ${post.text ? `<p class="anchor-preview">&ldquo;${esc(post.text)}&rdquo;</p>` : ''}
+    <p><button type="button" data-open-campaign="${esc(campaign.id)}">Open in ring feed</button></p>
   </article>`;
 }
 
@@ -263,8 +392,6 @@ export function mount(rootEl, ctx) {
       }
       store.saveGame(game);
       store.game = game;
-      // Remember who I am from the X handle, so campaign creation has a
-      // creator even before I ever join a ring.
       if (links.x && typeof store.saveMe === 'function') {
         const handle = '@' + links.x.replace(/\/$/, '').split('/').pop();
         const me = { name: game.name, handle };
@@ -279,7 +406,7 @@ export function mount(rootEl, ctx) {
     const game = store.game;
     const campaigns = store.campaigns || [];
     const live = liveCampaign(campaigns);
-    const turn = yourTurn(campaigns, store.me);
+    const turnPosts = yourTurnPosts(campaigns, store.me);
     const rings = myCampaigns(campaigns, store.me);
 
     rootEl.innerHTML = `
@@ -291,12 +418,12 @@ export function mount(rootEl, ctx) {
         </header>
         <p><button type="button" id="start-campaign" class="primary">Start a campaign</button></p>
         <section class="live-campaign">
-          <h3>Live campaign</h3>
-          ${live ? campaignCardHtml(live) : '<p class="empty-state">No live campaign yet. Start one and get the ring pushing.</p>'}
+          <h3>Latest activity</h3>
+          ${live ? campaignCardHtml(live) : '<p class="empty-state">No active ring yet. Start one and add your first post.</p>'}
         </section>
         <section class="your-turn">
           <h3>Your turn</h3>
-          ${turn.length ? turn.map((c) => campaignCardHtml(c, { showTurnButton: true })).join('') : '<p class="empty-state">Nothing owed — no quote-posts pending.</p>'}
+          ${turnPosts.length ? turnPosts.map(turnPostCardHtml).join('') : '<p class="empty-state">No new posts to assist.</p>'}
         </section>
         <section class="your-rings">
           <h3>Your rings</h3>
@@ -308,15 +435,10 @@ export function mount(rootEl, ctx) {
       view = 'create';
       render();
     });
-    rootEl.querySelectorAll('[data-open-campaign]').forEach((a) => {
-      a.addEventListener('click', (e) => {
+    rootEl.querySelectorAll('[data-open-campaign]').forEach((el) => {
+      el.addEventListener('click', (e) => {
         e.preventDefault();
-        navigate('campaign', { campaignId: a.dataset.openCampaign });
-      });
-    });
-    rootEl.querySelectorAll('[data-open-composer]').forEach((b) => {
-      b.addEventListener('click', () => {
-        navigate('composer', { campaignId: b.dataset.openComposer });
+        navigate('campaign', { campaignId: el.dataset.openCampaign });
       });
     });
   }
@@ -325,33 +447,32 @@ export function mount(rootEl, ctx) {
     rootEl.innerHTML = `
       <section class="campaign-create">
         <h2>Start a campaign</h2>
-        <p>For <strong>${esc(store.game.name)}</strong>. One post to amplify, a window, and the ring does the rest — in their own words, by hand.</p>
+        <p>For <strong>${esc(store.game.name)}</strong>. Start a ring with your founding post &mdash; add more posts as you build, no window, no deadline.</p>
         <form id="campaign-create-form">
           <p class="form-error" id="create-errors" hidden></p>
           <label>Campaign title
-            <input type="text" name="title" required autocomplete="off" placeholder="e.g. Launch week push">
+            <input type="text" name="title" required autocomplete="off" placeholder="e.g. Devlog &amp; launch ring">
           </label>
-          <label>Anchor post platform
+          <label>First post platform
             <select name="platform">
               <option value="x">X</option>
               <option value="bluesky">Bluesky</option>
+              <option value="reddit">Reddit</option>
+              <option value="instagram">Instagram</option>
+              <option value="tiktok">TikTok</option>
+              <option value="youtube">YouTube</option>
               <option value="threads">Threads</option>
+              <option value="other">Other</option>
             </select>
           </label>
-          <label>Anchor post URL
+          <label>First post URL
             <input type="url" name="url" required placeholder="https://x.com/.../status/..." autocomplete="off">
           </label>
-          <label>Anchor post text
-            <textarea name="text" required rows="3" placeholder="Paste the post to amplify"></textarea>
+          <label>First post text or context
+            <textarea name="text" required rows="3" placeholder="Paste the post text (required for X / Bluesky) or a line of context"></textarea>
           </label>
-          <label>Anchor post author
-            <input type="text" name="author" required placeholder="@yourhandle" autocomplete="off">
-          </label>
-          <label>Window start (optional)
-            <input type="date" name="start">
-          </label>
-          <label>Window end (optional)
-            <input type="date" name="end">
+          <label>First post author
+            <input type="text" name="author" required placeholder="@yourhandle" value="${esc(store.me?.handle || '')}" autocomplete="off">
           </label>
           <button type="submit">Create campaign</button>
           <button type="button" id="create-cancel">Cancel</button>
@@ -374,19 +495,17 @@ export function mount(rootEl, ctx) {
       };
       const errors = [];
       if (!title) errors.push('Campaign title is required.');
-      if (!anchorPost.url) errors.push('Anchor post URL is required.');
-      if (!anchorPost.text) errors.push('Anchor post text is required.');
-      if (!anchorPost.author) errors.push('Anchor post author is required.');
+      if (!anchorPost.url) errors.push('First post URL is required.');
+      if (!anchorPost.text && (anchorPost.platform === 'x' || anchorPost.platform === 'bluesky')) {
+        errors.push('Post text is required for X and Bluesky posts.');
+      }
+      if (!anchorPost.author) errors.push('First post author is required.');
       const errEl = rootEl.querySelector('#create-errors');
       if (errors.length) {
         errEl.textContent = errors.join(' ');
         errEl.hidden = false;
         return;
       }
-      const start = String(data.get('start') || '').trim();
-      const end = String(data.get('end') || '').trim();
-      // V21's createCampaign validates: both window dates or neither, and
-      // a creator is required. Fall back to the game itself as creator.
       const creator =
         store.me && store.me.handle
           ? store.me
@@ -405,7 +524,7 @@ export function mount(rootEl, ctx) {
           game: store.game,
           title,
           anchorPost,
-          window: start && end ? { start, end } : null,
+          window: null,
           creator,
         });
       } catch (err) {
