@@ -336,6 +336,26 @@ export function formatUsageLine(node) {
   return count === 1 ? "Used by 1 ring" : `Used by ${count} rings`;
 }
 
+/**
+ * Positions for a graph: `graph.positions` wins when present; otherwise
+ * fall back to `ctxPositions` (the positions the mount site computed
+ * alongside the graph). The two can disagree when the app shell and the
+ * view are cached at different versions — V54 proved it live: the v0.2.27
+ * shell built the graph WITHOUT positions attached (fixed in app.js by
+ * c681594) yet still passed positions as a separate mount argument, so a
+ * mount that reads only `graph.positions` renders the empty state with
+ * nodes in hand. A missing/empty candidate never wins over a populated one.
+ */
+export function resolvePositions(graph, ctxPositions) {
+  const hasEntries = (p) => {
+    if (p instanceof Map) return p.size > 0;
+    return !!p && typeof p === "object" && Object.keys(p).length > 0;
+  };
+  if (hasEntries(graph?.positions)) return graph.positions;
+  if (hasEntries(ctxPositions)) return ctxPositions;
+  return graph?.positions ?? ctxPositions ?? new Map();
+}
+
 function hexPoints(r) {
   const pts = [];
   for (let i = 0; i < 6; i++) {
@@ -393,13 +413,18 @@ export function mount(rootEl, ctx = {}) {
   const graph = ctx.graph && typeof ctx.graph === "object"
     ? ctx.graph
     : { nodes: [], edges: [], positions: new Map() };
+  // V54: positions may arrive beside the graph (ctx.positions) when the
+  // mount site built them separately — use them when graph.positions is
+  // missing, e.g. a stale shell that never attached them (see
+  // resolvePositions). Never let a present graph.positions be overridden.
+  const positions = resolvePositions(graph, ctx.positions);
   const allNodes = Array.isArray(graph.nodes) ? graph.nodes : [];
-  const positionedNodes = allNodes.filter((n) => n && n.id != null && positionOf(graph.positions, n.id));
+  const positionedNodes = allNodes.filter((n) => n && n.id != null && positionOf(positions, n.id));
   const nodeById = new Map(positionedNodes.map((n) => [n.id, n]));
   const allEdges = (Array.isArray(graph.edges) ? graph.edges : []).filter(
     (e) => e && nodeById.has(e.from) && nodeById.has(e.to),
   );
-  const validGraph = { nodes: positionedNodes, edges: allEdges, positions: graph.positions };
+  const validGraph = { nodes: positionedNodes, edges: allEdges, positions: positions };
 
   const width = isFiniteNum(ctx.width) && ctx.width > 0 ? ctx.width : DEFAULT_WIDTH;
   const height = isFiniteNum(ctx.height) && ctx.height > 0 ? ctx.height : DEFAULT_HEIGHT;
@@ -510,8 +535,8 @@ export function mount(rootEl, ctx = {}) {
 
   const edgeEls = [];
   for (const edge of allEdges) {
-    const fromPos = positionOf(graph.positions, edge.from);
-    const toPos = positionOf(graph.positions, edge.to);
+    const fromPos = positionOf(positions, edge.from);
+    const toPos = positionOf(positions, edge.to);
     const kindClass =
       edge.kind === "runs"
         ? "node-edge--runs"
@@ -532,7 +557,7 @@ export function mount(rootEl, ctx = {}) {
   const nodeEls = new Map();
   const haloEls = new Map();
   for (const node of positionedNodes) {
-    const pos = positionOf(graph.positions, node.id);
+    const pos = positionOf(positions, node.id);
     const r = resolveRadius(node, ctx.radiusFor);
     const haloR = haloRadiusFor(node, ctx.radiusFor, viewBox.w / width);
     const isFormat = node.kind === "format";
