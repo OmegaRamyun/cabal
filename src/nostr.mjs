@@ -22,11 +22,14 @@ export const STORAGE_KEYS = Object.freeze({
   relays: "cabal.v2.relays",
 });
 
+// V47: relay.nostr.band was dropped — it timed out twice from a live browser
+// (Nov 23 2026) while damus and nos.lol answered. Add it back only after a
+// fresh live check. KNOWN_DEAD_RELAYS is what the tests pin the defaults against.
 export const DEFAULT_RELAYS = Object.freeze([
   "wss://relay.damus.io",
   "wss://nos.lol",
-  "wss://relay.nostr.band",
 ]);
+export const KNOWN_DEAD_RELAYS = Object.freeze(["wss://relay.nostr.band"]);
 
 export const PRIVACY_LINE = "Anything on a public relay is public, and it can't be reliably deleted.";
 

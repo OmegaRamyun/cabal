@@ -61,8 +61,7 @@ rework, so merging V43b merged V41's work under the new shape.
 - Live-browser check (parent agent — no browser in this lane): load the
   app, open ToonSouls, confirm the 3-post feed + comments render with zero
   console errors; open the Sync panel on a campaign page; click-test the
-  relay defaults (`wss://relay.damus.io`, `wss://nos.lol`,
-  `wss://relay.nostr.band`); create a campaign and confirm its share link
+  relay defaults (`wss://relay.damus.io`, `wss://nos.lol`; relay.nostr.band dropped in V47); create a campaign and confirm its share link
   is a payload link, then publish and confirm it becomes a short naddr link;
   open a short link in a fresh profile and confirm the ring loads from the
   relays. Run the full official BIP-340 vector list against

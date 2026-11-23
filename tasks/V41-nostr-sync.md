@@ -27,7 +27,7 @@ Not wired: the sync panel (`mount`) is mounted into app.js/index.html by the coo
 Nothing is configured, and nothing is published, until the user taps "Use the suggested relays" (so "never configured" is a real state).
 - `wss://relay.damus.io` — the best-known, long-running public relay; broad client support.
 - `wss://nos.lol` — independent operator, free to write, widely used; diversity from the first.
-- `wss://relay.nostr.band` — well-known aggregator that indexes many relays, which helps a new ring's events be found.
+- ~~`wss://relay.nostr.band`~~ — DROPPED in V47 (timed out twice live, Nov 23 2026). Was: well-known aggregator that indexes many relays, which helps a new ring's events be found.
 These are availability judgements from general knowledge, not live-tested here (no network in this lane). Click-test before release; any may rate-limit or drop kind 30078. Users can add/remove. Only `wss://` accepted (plain `ws://` only for localhost).
 
 ## Key onboarding flow and exact copy
