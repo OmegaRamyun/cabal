@@ -74,12 +74,42 @@ test("shares-member dedupes per pair; shares-tag never doubles a pair", () => {
 });
 
 test("no format-format edges; edges only reference real nodes", () => {
-  const g = buildGraph({ rings, formats });
+  const usage = new Map([["fmt_bbbbbbbb", { rings: new Set(["pk1"]), assists: 0 }]]);
+  const g = buildGraph({ rings, formats, usage });
+  assert.ok(g.nodes.filter((n) => n.kind === "format").length >= 2);
   const byId = new Map(g.nodes.map((n) => [n.id, n]));
   for (const e of g.edges) {
     assert.ok(byId.has(e.from) && byId.has(e.to));
     assert.ok(!(byId.get(e.from).kind === "format" && byId.get(e.to).kind === "format"));
   }
+});
+
+test("ring weight = member count; label fallbacks", () => {
+  const g = buildGraph({ rings, formats });
+  assert.equal(g.nodes.find((n) => n.ref === "cmp_a").weight, 2);
+  assert.equal(g.nodes.find((n) => n.ref === "cmp_a").label, "CMP_A");
+  const rs = [
+    { ...ring("cmp_t", ["@a", "@b"]), game: { links: link, tags: [] }, title: "Titled" },
+    { ...ring("cmp_i", ["@c", "@d", "@e"]), game: { links: link, tags: [] } },
+  ];
+  const g2 = buildGraph({ rings: rs, formats: [] });
+  assert.equal(g2.nodes.find((n) => n.ref === "cmp_t").label, "Titled");
+  assert.equal(g2.nodes.find((n) => n.ref === "cmp_i").label, "cmp_i");
+  assert.equal(g2.nodes.find((n) => n.ref === "cmp_i").weight, 3);
+  const g3 = buildGraph({ rings, formats: [fmt("fmt_aaaaaaaa"), { id: "fmt_nolabel1", tagline: "" }], usage: new Map([["fmt_nolabel1", { rings: new Set(["p"]), assists: 0 }]]) });
+  assert.equal(g3.nodes.find((n) => n.ref === "fmt_aaaaaaaa").label, "tag fmt_aaaaaaaa");
+  assert.equal(g3.nodes.find((n) => n.ref === "fmt_nolabel1").label, "fmt_nolabel1");
+});
+
+test("non-listable ring with formatId admits no format and no runs edge", () => {
+  const rs = [
+    ring("cmp_a", ["@x", "@y"]),
+    ring("cmp_solo", ["@solo"], [], { formatId: "fmt_bbbbbbbb" }), // 1 member
+  ];
+  const g = buildGraph({ rings: rs, formats });
+  assert.ok(!g.nodes.some((n) => n.ref === "fmt_bbbbbbbb"));
+  assert.ok(!g.nodes.some((n) => n.ref === "cmp_solo"));
+  assert.ok(!g.edges.some((e) => e.kind === "runs"));
 });
 
 test("radiusForWeight monotonic, capped, positive", () => {

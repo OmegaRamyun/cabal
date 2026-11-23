@@ -11,7 +11,6 @@
 
 import { isListable } from "./discovery.mjs";
 import {
-  formatIdForRing,
   ringsRunningFormat,
   toUsageMap,
 } from "./campaign-formats.mjs";
