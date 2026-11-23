@@ -1,6 +1,6 @@
 # T07 — Kickstarter planner + referral tags
 
-Status: open
+Status: done (merged to main)
 
 ## Goal
 

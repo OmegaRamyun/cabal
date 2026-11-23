@@ -1,6 +1,6 @@
 # T08 — Steam UTM builder + campaign templates
 
-Status: open
+Status: done (merged to main)
 
 ## Goal
 

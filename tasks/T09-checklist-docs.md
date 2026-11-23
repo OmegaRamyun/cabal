@@ -1,6 +1,6 @@
 # T09 — Pre-post checklist + docs
 
-Status: open
+Status: done (merged to main)
 
 ## Goal
 

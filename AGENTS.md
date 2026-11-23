@@ -7,7 +7,7 @@ writing code. Keep it short: commands first, rules second.
 
 - Run: `python3 -m http.server 8000` in the repo root, open
   http://localhost:8000
-- Tests: `npm test` (runs `node --test tests/`)
+- Tests: `npm test` (runs `node --test "tests/**/*.test.mjs"` — the bare `node --test tests/` form fails on Node 24, which treats `tests/` as a file path)
 - No build step. No framework. No runtime npm dependencies.
 
 ## Stack

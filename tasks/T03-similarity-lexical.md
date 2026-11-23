@@ -1,6 +1,6 @@
 # T03 — Similarity gate, lexical (always on)
 
-Status: open
+Status: done (merged to main)
 
 ## Goal
 

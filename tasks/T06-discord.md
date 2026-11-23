@@ -1,6 +1,6 @@
 # T06 — Discord #rings bridge
 
-Status: open
+Status: done (merged to main)
 
 ## Goal
 

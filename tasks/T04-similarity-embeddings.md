@@ -1,6 +1,6 @@
 # T04 — Similarity gate, MiniLM embeddings (opt-in)
 
-Status: open
+Status: done (merged to main)
 
 ## Goal
 

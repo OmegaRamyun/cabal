@@ -1,6 +1,6 @@
 # T05 — Matchmaking directory + match score
 
-Status: open
+Status: done (merged to main)
 
 ## Goal
 

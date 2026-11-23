@@ -1,6 +1,6 @@
 # T02 — Intent composers (X / Bluesky / Threads / Reddit)
 
-Status: open
+Status: done (merged to main)
 
 ## Goal
 

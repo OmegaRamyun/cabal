@@ -1,6 +1,6 @@
 # T01 — App shell, layout, module registry
 
-Status: open
+Status: done (merged to main)
 
 ## Goal
 

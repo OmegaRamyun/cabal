@@ -1,6 +1,6 @@
 # T10 — Test harness + CI
 
-Status: open
+Status: partial — package.json + tests/README.md merged to main (cd35c2b); .github/workflows/test.yml NOT landed: the gh token lacks the `workflow` scope. Land it after `gh auth refresh -s workflow`.
 
 ## Goal
 
