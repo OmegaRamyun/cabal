@@ -7,7 +7,8 @@
 //   #/campaign/<id>       campaign page — whole ring + join + share link
 //   #/composer/<id>       quote composer for that campaign
 //   #/discover            legacy route to the Campaigns view
-//   #/campaigns           Campaigns — blowing-up templates, most-used first
+//   #/campaigns           Campaigns — ONE node view (V53): rings +
+//                          templates as nodes, edges from real data
 //   #/campaigns/new       New campaign template (V49 create form)
 //   #/format/<id>         one campaign template's page
 //   #/tools               campaign tools (Kickstarter, Steam, Discord, checklist)
@@ -35,6 +36,8 @@ import * as gamify from './src/gamify.mjs';
 import * as formats from './src/campaign-formats.mjs';
 import * as userFormats from './src/user-formats.mjs';
 import * as popularity from './src/popularity.mjs';
+import * as graph from './src/graph.mjs';
+import * as nodeView from './src/node-view.mjs';
 import { mergeSyncedIntoStore } from './src/sync-target.mjs';
 
 const backend = createStore();
@@ -85,6 +88,37 @@ export function firstPostIdsFor(campaigns = []) {
     if (c && c.id && first && first.id) ids.push(`${c.id}:${first.id}`);
   }
   return ids;
+}
+
+/**
+ * openNodeTarget(node) -> { view: 'campaign', campaignId } |
+ * { view: 'format', formatId } | null — where a node-view tap goes.
+ * Ring nodes open the ring page, format nodes the template page.
+ * node.ref is the bare ring/format id (V51 prefixes node.id with kind).
+ * Pure, tested.
+ */
+export function openNodeTarget(node) {
+  if (!node || typeof node !== 'object') return null;
+  if (node.kind === 'ring' && typeof node.ref === 'string' && node.ref) {
+    return { view: 'campaign', campaignId: node.ref };
+  }
+  if (node.kind === 'format' && typeof node.ref === 'string' && node.ref) {
+    return { view: 'format', formatId: node.ref };
+  }
+  return null;
+}
+
+/**
+ * nodeViewGraph({ rings, formats, usage }, { width, height }) ->
+ * { graph, positions } — the node view's input, built from the same lists
+ * the old discovery view used. Pure, tested. The radiusFor adapter the
+ * mount site passes is (n) => graph.radiusForWeight(n.weight, n.kind);
+ * it lives in renderCampaigns, not here, because layout and drawing must
+ * share one radius function at the mount site.
+ */
+export function nodeViewGraph({ rings, formats, usage } = {}, { width = 800, height = 520 } = {}) {
+  const g = graph.buildGraph({ rings, formats, usage });
+  return { graph: g, positions: graph.layoutGraph(g, { width, height }) };
 }
 
 /** parseHash(hash) -> { view, campaignId?, hash? } — pure, tested. */
@@ -414,13 +448,12 @@ async function loadFormatUsage(formatIds) {
 }
 
 /**
- * renderCampaigns(view) — the "Campaigns" view (V45/V46): the template
- * list on top (most-used first once the relay query resolves), the
- * ring-discovery sections below. #/discover is the legacy route to the
- * same view. Mounts immediately with local data, then re-mounts with
- * usage counts when the relay query returns (only if still on this
- * route). Best-effort: a failed query leaves the unranked view, never
- * an error.
+ * renderCampaigns(view) — the "Campaigns" view is ONE node view (V53):
+ * rings + templates as nodes, edges from real data (V51 graph, V52
+ * view). #/discover is the legacy route to the same view. Mounts
+ * immediately with local data, then re-mounts with usage counts when the
+ * relay query returns (only if still on this route). Best-effort: a
+ * failed query leaves the unranked view, never an error.
  */
 async function renderCampaigns(view) {
   const formatsList = await loadMergedFormats();
@@ -428,19 +461,28 @@ async function renderCampaigns(view) {
   const merged = discovery.mergeLists(statics, store.campaigns);
   const mountIt = (usage) => {
     view.textContent = '';
-    discovery.mount(view, {
-      myTags: (store.game && store.game.tags) || [],
-      campaigns: merged,
-      formats: formatsList,
-      rings: merged,
-      sortByUsage: usage || null,
+    const { graph: g, positions } = nodeViewGraph(
+      { rings: merged, formats: formatsList, usage: usage || null },
+    );
+    nodeView.mount(view, {
+      graph: g,
+      positions,
+      // The radius adapter the V51 verifier required: layout and drawing
+      // share one radius function, or the net crowds (see verify-v52.md).
+      radiusFor: (n) => graph.radiusForWeight(n.weight, n.kind),
       usageNote: usage ? usageNoteCache : null,
-      onNewTemplate: () => { window.location.hash = '#/campaigns/new'; },
-      navigate: (campaign) => {
-        gamify.record('discover', { campaignId: campaign.id });
-        window.location.hash = `#/campaign/${encodeURIComponent(campaign.id)}`;
+      onOpenNode: (node) => {
+        const target = openNodeTarget(node);
+        if (!target) return;
+        if (target.view === 'campaign') {
+          gamify.record('discover', { campaignId: target.campaignId });
+          window.location.hash = `#/campaign/${encodeURIComponent(target.campaignId)}`;
+        } else {
+          navigate('format', { formatId: target.formatId });
+        }
       },
-      navigateFormat: (f) => navigate('format', { formatId: f.id }),
+      onStartRing: () => { window.location.hash = '#/rings'; },
+      onNewTemplate: () => { window.location.hash = '#/campaigns/new'; },
     });
   };
   mountIt(usageCache);

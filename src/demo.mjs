@@ -79,7 +79,7 @@ function hoursAgo(base, hours) {
 // to the v2 sustained-ring shape by normalizeCampaign: the anchor becomes
 // posts[0] and each "posted" member becomes an assist on it. Windows pass
 // through for decode compatibility; the UI never surfaces them as ring state.
-function campaign(id, title, anchorPost, window, members, createdAt, extraPosts = []) {
+function campaign(id, title, anchorPost, window, members, createdAt, extraPosts = [], formatId = null) {
   const v2 = normalizeCampaign({
     id,
     game: demoGame(),
@@ -89,6 +89,11 @@ function campaign(id, title, anchorPost, window, members, createdAt, extraPosts 
     members,
     createdAt,
     demo: true,
+    // V53: demo rings run formats so the node view shows template nodes
+    // with real `runs` edges. A ring's formatId is the format its
+    // campaign uses — the launch push states its game flatly
+    // (fmt_algoigno), the same shape as the format's joke.
+    ...(formatId ? { formatId } : {}),
   });
   v2.posts.push(...extraPosts);
   return v2;
@@ -101,6 +106,7 @@ function campaign(id, title, anchorPost, window, members, createdAt, extraPosts 
  * `now` defaults to the current time; pass a fixed Date in tests so the
  * live/upcoming windows are deterministic.
  *  1. LIVE "Launch week push" — window covers now, 4 members, 2 posted.
+ *     Runs fmt_algoigno (the launch announcement states the game flatly).
  *  2. UPCOMING "Demo day push" — window starts tomorrow, 3 members, 0 posted.
  *  3. POPULAR "Steam Next Fest push" — 6 members, 5 posted.
  */
@@ -130,6 +136,8 @@ export function demoCampaigns(now = new Date()) {
         member("Rook", "@rookdev", "pending"),
       ],
       hoursAgo(base, 72),
+      [],
+      'fmt_algoigno',
     ),
     campaign(
       "cmp_demo_demoday",

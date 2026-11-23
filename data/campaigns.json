@@ -9,6 +9,7 @@
       },
       "createdAt": "2026-11-22T09:00:00Z",
       "demo": true,
+      "formatId": "fmt_oneclip1",
       "game": {
         "links": {
           "itch": "https://example-dev.itch.io/toon-souls",
