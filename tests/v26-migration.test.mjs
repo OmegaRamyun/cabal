@@ -10,6 +10,8 @@ import {
   createChecklistState,
   getCampaignMissingItems,
   isCampaignChecklistReady,
+  loadCampaignChecklistState,
+  saveCampaignChecklistState,
   toggleCampaignChecklistItem,
 } from '../src/checklist.mjs';
 import {
@@ -173,5 +175,39 @@ describe('existing checklist exports unchanged', () => {
       'timing',
       'utmLink',
     ]);
+  });
+});
+
+describe('campaign checklist persistence (V36)', () => {
+  const memoryStorage = () => {
+    const m = new Map();
+    return {
+      getItem: (k) => (m.has(k) ? m.get(k) : null),
+      setItem: (k, v) => m.set(k, String(v)),
+      removeItem: (k) => m.delete(k),
+    };
+  };
+
+  it('round-trips a campaign checklist through its own key', () => {
+    const s = memoryStorage();
+    let cl = loadCampaignChecklistState('camp-a', s);
+    assert.equal(isCampaignChecklistReady(cl), false);
+    for (const item of campaignChecklistItems()) {
+      cl = toggleCampaignChecklistItem(cl, item.id, true);
+    }
+    saveCampaignChecklistState(cl, s);
+    const reloaded = loadCampaignChecklistState('camp-a', s);
+    assert.equal(isCampaignChecklistReady(reloaded), true);
+    assert.equal(reloaded.key, 'cabal.v2.checklist.camp-a');
+    assert.equal(reloaded.campaignId, 'camp-a');
+  });
+
+  it('falls back to fresh state on corrupt JSON or missing storage', () => {
+    const s = memoryStorage();
+    s.setItem('cabal.v2.checklist.camp-a', '{not json');
+    assert.equal(isCampaignChecklistReady(loadCampaignChecklistState('camp-a', s)), false);
+    assert.equal(isCampaignChecklistReady(loadCampaignChecklistState('camp-a', null)), false);
+    assert.doesNotThrow(() => saveCampaignChecklistState(null, s));
+    assert.doesNotThrow(() => saveCampaignChecklistState(createCampaignChecklist('camp-a'), null));
   });
 });

@@ -194,6 +194,53 @@ export function chooseTitle(journal, titleId) {
   return j;
 }
 
+/**
+ * trackRevision(textarea, { anchorText, draftId, onKindled, storage }) —
+ * watch one composer textarea for a flagged draft that gets genuinely
+ * reworked. Remembers the first draft the gate flags; on each input,
+ * assesses the current draft against it and records "revise" when it
+ * kindles. Resets when the textarea is emptied (a fresh draft starts a
+ * fresh watch) and after a kindle, so one draft kindles once. Advisory
+ * only: it never touches the textarea's value and never blocks anything.
+ * Returns { destroy() }.
+ */
+export function trackRevision(textarea, { anchorText, draftId, onKindled, storage } = {}) {
+  if (!textarea || typeof textarea.addEventListener !== "function") {
+    return { destroy() {} };
+  }
+  let flagged = null;
+  function onInput() {
+    const current = textarea.value;
+    if (!String(current ?? "").trim()) {
+      flagged = null;
+      return;
+    }
+    if (flagged === null) {
+      const probe = gate(String(current), [String(anchorText ?? "")]);
+      if (probe.verdict !== "pass") flagged = current;
+      return;
+    }
+    const r = assessRevision(anchorText, flagged, current);
+    if (r.kindled) {
+      const recorded = record("revise", { draftId, anchor: anchorText, before: flagged, after: current }, storage);
+      flagged = null;
+      // Fire only when the milestone is new — a later rework of the same
+      // draft re-kindles the assessment but is already in the journal.
+      if (typeof onKindled === "function" && recorded.newMilestones.includes("kindled")) {
+        onKindled(recorded);
+      }
+    }
+  }
+  textarea.addEventListener("input", onInput);
+  return {
+    destroy() {
+      if (typeof textarea.removeEventListener === "function") {
+        textarea.removeEventListener("input", onInput);
+      }
+    },
+  };
+}
+
 export function milestonesReached(journal, ctx = {}) {
   const j = createJournal(journal);
   return MILESTONES.filter((m) => m.test(j, ctx)).map((m) => m.id);

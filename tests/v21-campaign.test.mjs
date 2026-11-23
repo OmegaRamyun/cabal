@@ -200,6 +200,6 @@ test("store: corrupt / wrong-typed values fall back to defaults", () => {
 
 test("store keys are under cabal.v2.*", () => {
   assert.deepEqual(Object.values(KEYS).sort(), [
-    "cabal.v2.campaigns", "cabal.v2.demo", "cabal.v2.game", "cabal.v2.me",
+    "cabal.v2.campaigns", "cabal.v2.demo", "cabal.v2.game", "cabal.v2.journal", "cabal.v2.me",
   ]);
 });

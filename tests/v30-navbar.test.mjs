@@ -6,6 +6,7 @@ test('navItemForView: home is the default', () => {
   assert.equal(navItemForView('home'), 'home');
   assert.equal(navItemForView('campaign'), 'home');
   assert.equal(navItemForView('composer'), 'home');
+  assert.equal(navItemForView('intro'), 'home');
   assert.equal(navItemForView('link'), 'home');
   assert.equal(navItemForView(''), 'home');
   assert.equal(navItemForView('nope'), 'home');

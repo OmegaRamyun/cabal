@@ -102,6 +102,62 @@ test("record() tolerates a null payload", () => {
   assert.doesNotThrow(() => G.record("revise", null, s));
 });
 
+function fakeTextarea() {
+  const listeners = new Map();
+  return {
+    value: "",
+    addEventListener(type, fn) { listeners.set(type, fn); },
+    removeEventListener(type, fn) { if (listeners.get(type) === fn) listeners.delete(type); },
+    fire() { listeners.get("input")?.(); },
+    get listenerCount() { return listeners.size; },
+  };
+}
+
+test("trackRevision: flagged-then-reworked draft kindles once", () => {
+  const s = mem();
+  const ta = fakeTextarea();
+  let kindledCalls = 0;
+  const h = G.trackRevision(ta, { anchorText: ANCHOR, draftId: "d1", storage: s, onKindled: () => { kindledCalls += 1; } });
+  ta.value = COPY;
+  ta.fire();
+  assert.deepEqual(G.loadJournal(s).kindled, {});
+  ta.value = OWN;
+  ta.fire();
+  assert.ok(G.loadJournal(s).kindled.d1);
+  assert.equal(kindledCalls, 1);
+  // A second rework of the same draft re-kindles the assessment but the
+  // journal already holds it, so onKindled does not fire again.
+  ta.value = COPY;
+  ta.fire();
+  ta.value = OWN + " And a little more.";
+  ta.fire();
+  assert.equal(kindledCalls, 1);
+  h.destroy();
+  assert.equal(ta.listenerCount, 0);
+});
+
+test("trackRevision: never-flagged drafts and empty resets do not kindle", () => {
+  const s = mem();
+  const ta = fakeTextarea();
+  G.trackRevision(ta, { anchorText: ANCHOR, draftId: "d2", storage: s });
+  ta.value = OWN;
+  ta.fire();
+  assert.deepEqual(G.loadJournal(s).kindled, {});
+  // Flagged, then emptied, then a fresh passing draft: no kindle.
+  ta.value = COPY;
+  ta.fire();
+  ta.value = "";
+  ta.fire();
+  ta.value = OWN;
+  ta.fire();
+  assert.deepEqual(G.loadJournal(s).kindled, {});
+});
+
+test("trackRevision: no textarea is a safe no-op", () => {
+  assert.doesNotThrow(() => G.trackRevision(null, { anchorText: ANCHOR, draftId: "d3" }));
+  assert.doesNotThrow(() => G.trackRevision({}, { anchorText: ANCHOR, draftId: "d3" }));
+});
+
 test("kindling is advisory data: never throws, once per draft", () => {
   let r = G.kindleDraft(G.createJournal(), "d1", { anchor: ANCHOR, before: COPY, after: OWN });
   assert.ok(G.milestonesReached(r.journal).includes("kindled"));
