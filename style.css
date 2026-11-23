@@ -48,29 +48,48 @@
 }
 
 /* ---- layout ---- */
-header, main, footer { max-width: 54rem; margin: 0 auto; padding: 1rem; }
-header { border-bottom: 1px solid var(--pico-muted-border-color); padding-bottom: 1rem; }
-h1 { margin: 0.25rem 0 0.5rem; }
+/* ---- topbar: sticky brand + icon nav, full-bleed; the title and the
+   tagline no longer repeat on every page (pitch lives in first-run
+   setup + the footer). ---- */
+main, footer { max-width: 54rem; margin: 0 auto; padding: 1rem; }
+header {
+  position: sticky; top: 0; z-index: 10;
+  background: var(--pico-background-color);
+  border-bottom: 1px solid var(--pico-muted-border-color);
+}
+.topbar, #demo-banner, #update-banner { max-width: 54rem; margin: 0 auto; padding-left: 1rem; padding-right: 1rem; }
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-top: 0.5rem; padding-bottom: 0.5rem; }
+.brand { margin: 0; font-size: 1.25rem; line-height: 1; }
+.brand a { color: inherit; text-decoration: none; }
 .explainer { color: var(--pico-muted-color); margin: 0 0 0.75rem; }
 .mount { min-height: 1rem; }
 footer { padding-top: 0; }
 
-/* ---- nav: links that read as buttons, one clear row ---- */
-nav { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 0.5rem; margin-top: 0.75rem; }
-nav a {
-  display: inline-flex; align-items: center; min-height: 44px; padding: 0 0.875rem;
-  border: 1px solid var(--pico-muted-border-color); border-radius: 0.5rem;
+/* ---- nav: icon items in the top bar; the gear opens Tools & Terms ---- */
+nav { display: flex; align-items: center; gap: 0.25rem; }
+.nav-item {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  min-height: 44px; padding: 0.5rem 0.75rem;
+  border: 1px solid transparent; border-radius: 0.5rem;
   /* inherit, not var(--pico-color): Pico overrides --pico-color on <a>
      to the link blue, and on <button> to primary-inverse (white). */
-  text-decoration: none; color: inherit; background: transparent;
-  transition: background-color var(--cabal-duration-quick) var(--cabal-ease),
-    border-color var(--cabal-duration-quick) var(--cabal-ease);
-}
-nav a:hover {
-  background: var(--pico-form-element-selected-background-color);
-  border-color: var(--pico-muted-color);
+  color: inherit; background: transparent; font: inherit; cursor: pointer;
   text-decoration: none;
+  transition: background-color var(--cabal-duration-quick) var(--cabal-ease);
 }
+.nav-item:hover { background: var(--pico-form-element-selected-background-color); text-decoration: none; }
+.nav-item[aria-current="page"] { background: var(--pico-form-element-selected-background-color); font-weight: 600; }
+.nav-icon { width: 1.25rem; height: 1.25rem; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.nav-menu { position: relative; }
+.nav-menu-list {
+  position: absolute; right: 0; top: calc(100% + 0.25rem); min-width: 12rem; padding: 0.25rem;
+  z-index: 20; /* above the demo/update banners below the top bar */
+  background: var(--pico-card-background-color);
+  border: 1px solid var(--pico-muted-border-color); border-radius: var(--cabal-radius);
+  box-shadow: var(--pico-card-box-shadow);
+}
+.nav-menu-list a { display: block; padding: 0.6rem 0.75rem; border-radius: 0.375rem; color: inherit; text-decoration: none; }
+.nav-menu-list a:hover { background: var(--pico-form-element-selected-background-color); text-decoration: none; }
 
 /* ---- cards: top-level sections are cards; nested sections are dividers ---- */
 main section {
@@ -348,7 +367,10 @@ pre {
 
 /* ---- mobile: tighter feed column, composer stays reachable ---- */
 @media (max-width: 640px) {
-  header, main, footer { padding: 0.75rem; }
+  main, footer { padding: 0.75rem; }
+  .topbar, #demo-banner, #update-banner { padding-left: 0.75rem; padding-right: 0.75rem; }
+  .nav-item span { display: none; }
+  .nav-item { padding: 0.5rem; }
   main section { padding: 1rem; }
   .post-head .avatar { width: 2rem; height: 2rem; }
   .compose-sticky { top: 0.25rem; padding: 0.75rem 1rem; }
