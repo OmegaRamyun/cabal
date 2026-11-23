@@ -82,7 +82,38 @@ events (without which V46 counting could never see anything).
   sandbox relay blocks (damus + nos.lol WebSockets fail through the
   proxy; the app degrades gracefully to the couldn't-reach note).
 
-## Left open
+## Verifier round 1 — NO-GO (permissions) + 4 real findings, all fixed
+
+Gemini fresh-context review (`cabal-bench/verify-v45-v48.md`) came back
+NO-GO, blocked: files merged as root were `0660 root:root`, so the
+builder-run verifier could not read them (205 tests ran, 17 EACCES
+failures). Fixed durably: `find` chmod 755 dirs / 644 files across the
+repo, `.git/index` + `.git/objects` chowned to builder after every
+root git write (root commits re-poison the index — re-chown every
+time). Verified builder can run `git status`/`git log`/`npm test`.
+
+The verifier's four code findings were all valid and are fixed in
+v0.2.22 (commit `3653d3f`, 399/399 green as root AND as builder):
+
+1. **Navbar**: the Discover item still pointed at `#/discover` with
+   no visible Campaigns entry. Repointed to `#/campaigns`, relabeled
+   "Campaigns" (`index.html`). `#/discover` stays as an alias route.
+2. **Assist tiebreak dropped at the seam**: V48's `usageRingCounts`
+   collapsed `{rings, assists}` to a bare count, so the V46 assist
+   tiebreak never reached the sort. Fixed properly: `toUsageDetail`
+   in `src/campaign-formats.mjs` now understands the V46 shape
+   (ring count primary, assists tiebreak, then members, then id);
+   the raw usage Map flows through (converter deleted, seam tests
+   rewritten against `toUsageDetail`/`formatsForDiscovery`).
+3. **`#/rings` omitted `#home-extras`**: `renderHomeExtras` exited
+   unless view was `home`. Now allows `rings` too (primer link +
+   field journal render on the rings route).
+4. **Case-sensitive re-mount check**: the format page's async
+   re-mount compared the hash case-sensitively while the route
+   matches the id case-insensitively. Now lowercased on both sides.
+
+Re-verification (same brief, perms fixed) + repeat Playwright smoke
+were re-dispatched after v0.2.22; results in the round report.
 
 - Relay query runs once per page load; no refresh button for usage
   counts (a re-query control is a small follow-up if wanted).
