@@ -58,14 +58,21 @@ export function positionOf(positions, id) {
   return { x: pos.x, y: pos.y };
 }
 
+export const DEFAULT_RADIUS = Object.freeze({
+  ring: Object.freeze({ base: 10, scale: 4, max: 36 }),
+  format: Object.freeze({ base: 12, scale: 5, max: 44 }),
+});
+
 /**
- * Default node radius from weight: monotonic, capped in [14, 38].
+ * Default node radius from weight and kind, matching V51's layout radii:
+ * ring: min(36, 10 + 4 * sqrt(w)); format: min(44, 12 + 5 * sqrt(w)).
  * Bigger/heavier nodes are the formats more rings run (or larger rings).
  */
 export function defaultRadiusFor(node) {
+  const p = node?.kind === "format" ? DEFAULT_RADIUS.format : DEFAULT_RADIUS.ring;
   const raw = node && isFiniteNum(node.weight) ? node.weight : 0;
   const w = Math.max(0, raw);
-  return Math.min(38, 14 + Math.sqrt(w) * 6);
+  return Math.min(p.max, p.base + p.scale * Math.sqrt(w));
 }
 
 function resolveRadius(node, radiusFor) {
@@ -76,9 +83,14 @@ function resolveRadius(node, radiusFor) {
   return defaultRadiusFor(node);
 }
 
-/** Transparent hit halo radius — guarantees at least a 44px tap target. */
-export function haloRadiusFor(node, radiusFor) {
-  return Math.max(resolveRadius(node, radiusFor) + 8, HALO_MIN_RADIUS);
+/**
+ * Transparent hit halo radius in SVG user units — scales HALO_MIN_RADIUS by
+ * `unitsPerPx` (`viewBox.w / svgRect.width`) so the tap target stays >= 22 CSS px
+ * radius (44 CSS px diameter) across viewport widths and zoom levels.
+ */
+export function haloRadiusFor(node, radiusFor, unitsPerPx = 1) {
+  const scale = isFiniteNum(unitsPerPx) && unitsPerPx > 0 ? unitsPerPx : 1;
+  return Math.max(resolveRadius(node, radiusFor) + 8, HALO_MIN_RADIUS * scale);
 }
 
 /**
@@ -229,7 +241,7 @@ export function nodeAtPoint(graph, x, y, opts = {}) {
     const pos = positionOf(graph.positions, node.id);
     if (!pos) continue;
     const visR = resolveRadius(node, opts.radiusFor);
-    const hitR = Math.max(visR + 8, HALO_MIN_RADIUS);
+    const hitR = haloRadiusFor(node, opts.radiusFor, opts.unitsPerPx);
     const dx = x - pos.x;
     const dy = y - pos.y;
     const distSq = dx * dx + dy * dy;
@@ -518,10 +530,11 @@ export function mount(rootEl, ctx = {}) {
   }
 
   const nodeEls = new Map();
+  const haloEls = new Map();
   for (const node of positionedNodes) {
     const pos = positionOf(graph.positions, node.id);
     const r = resolveRadius(node, ctx.radiusFor);
-    const haloR = haloRadiusFor(node, ctx.radiusFor);
+    const haloR = haloRadiusFor(node, ctx.radiusFor, viewBox.w / width);
     const isFormat = node.kind === "format";
     const kindWord = isFormat ? "Campaign template" : "Ring";
     const usage = formatUsageLine(node);
@@ -536,14 +549,14 @@ export function mount(rootEl, ctx = {}) {
       "data-node-id": node.id,
     });
 
-    // Transparent hit halo for >= 44px tap target
-    g.appendChild(
-      svgEl(doc, "circle", {
-        class: "node-halo",
-        r: haloR,
-        fill: "transparent",
-      }),
-    );
+    // Transparent hit halo for >= 44 CSS px tap target (scaled on viewBox/resize)
+    const halo = svgEl(doc, "circle", {
+      class: "node-halo",
+      r: haloR,
+      fill: "transparent",
+    });
+    g.appendChild(halo);
+    haloEls.set(node.id, halo);
 
     // Visually distinct shape: circle for ring, hexagon for campaign template
     if (isFormat) {
@@ -616,9 +629,26 @@ export function mount(rootEl, ctx = {}) {
     section.appendChild(el(doc, "p", ctx.usageNote, "node-view-footnote view-lede"));
   }
 
-  // ---- ViewBox application (instant, zero animation) ----
+  // ---- ViewBox application & screen-px halo scaling (instant, zero animation) ----
+  function currentUnitsPerPx() {
+    const rect = svg.getBoundingClientRect();
+    if (rect && isFiniteNum(rect.width) && rect.width > 0) {
+      return viewBox.w / rect.width;
+    }
+    return viewBox.w / width;
+  }
+
+  function updateHalos() {
+    const upp = currentUnitsPerPx();
+    for (const [id, halo] of haloEls) {
+      const node = nodeById.get(id);
+      halo.setAttribute("r", String(haloRadiusFor(node, ctx.radiusFor, upp)));
+    }
+  }
+
   function applyViewBox() {
     svg.setAttribute("viewBox", `${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`);
+    updateHalos();
   }
 
   function clientToWorld(clientX, clientY) {
@@ -791,7 +821,6 @@ export function mount(rootEl, ctx = {}) {
         x: e.clientX,
         y: e.clientY,
         vb: { ...viewBox },
-        targetNodeId: e.target?.closest?.("[data-node-id]")?.getAttribute?.("data-node-id") || null,
       };
       moved = false;
     } else if (activePointers.size === 2) {
@@ -846,14 +875,23 @@ export function mount(rootEl, ctx = {}) {
     if (activePointers.size < 2) pinchStartDist = 0;
 
     if (!moved && dragStart && activePointers.size === 0) {
-      if (dragStart.targetNodeId && nodeById.has(dragStart.targetNodeId)) {
-        select(dragStart.targetNodeId);
-      } else {
-        const worldPt = clientToWorld(e.clientX, e.clientY);
-        const hit = nodeAtPoint(validGraph, worldPt.x, worldPt.y, radiusOpt);
-        select(hit ? hit.id : null);
-      }
+      const worldPt = clientToWorld(e.clientX, e.clientY);
+      const hit = nodeAtPoint(validGraph, worldPt.x, worldPt.y, {
+        ...radiusOpt,
+        unitsPerPx: currentUnitsPerPx(),
+      });
+      select(hit ? hit.id : null);
     }
+    if (activePointers.size === 0) {
+      dragStart = null;
+      moved = false;
+    }
+  }
+
+  function onPointerCancel(e) {
+    if (!activePointers.has(e.pointerId)) return;
+    activePointers.delete(e.pointerId);
+    if (activePointers.size < 2) pinchStartDist = 0;
     if (activePointers.size === 0) {
       dragStart = null;
       moved = false;
@@ -877,10 +915,20 @@ export function mount(rootEl, ctx = {}) {
   svg.addEventListener("pointerdown", onPointerDown);
   svg.addEventListener("pointermove", onPointerMove);
   svg.addEventListener("pointerup", onPointerUp);
-  svg.addEventListener("pointercancel", onPointerUp);
+  svg.addEventListener("pointercancel", onPointerCancel);
   svg.addEventListener("wheel", onWheel, { passive: false });
   section.addEventListener("keydown", onKeyDown);
 
+  const win = doc.defaultView || (typeof globalThis.window !== "undefined" ? globalThis.window : null);
+  let resizeObserver = null;
+  if (typeof globalThis.ResizeObserver === "function") {
+    resizeObserver = new globalThis.ResizeObserver(() => updateHalos());
+    resizeObserver.observe(svg);
+  } else if (win && typeof win.addEventListener === "function") {
+    win.addEventListener("resize", updateHalos);
+  }
+
+  updateHalos();
   updateSelectionState();
   renderPanel();
 
@@ -889,9 +937,14 @@ export function mount(rootEl, ctx = {}) {
       svg.removeEventListener("pointerdown", onPointerDown);
       svg.removeEventListener("pointermove", onPointerMove);
       svg.removeEventListener("pointerup", onPointerUp);
-      svg.removeEventListener("pointercancel", onPointerUp);
+      svg.removeEventListener("pointercancel", onPointerCancel);
       svg.removeEventListener("wheel", onWheel);
       section.removeEventListener("keydown", onKeyDown);
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      } else if (win && typeof win.removeEventListener === "function") {
+        win.removeEventListener("resize", updateHalos);
+      }
     },
     select,
     resetView,

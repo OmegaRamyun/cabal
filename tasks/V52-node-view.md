@@ -21,6 +21,22 @@ SVG over canvas — native DOM nodes give crisp real text labels, built-in keybo
 ## Design note on unused formats
 A format with no ring using it has no node, by design (stated here, not in the UI). When the graph is empty, the empty state states the share requirement honestly without softening it.
 
+## Context (`ctx`) contract
+`mount(rootEl, ctx)` accepts:
+- `graph` — `{ nodes, edges, positions }` (V51 shape: `ring:`/`format:` prefixed `id`, bare `ref`, `Map` or plain-object `positions`).
+- `radiusFor(node)` (optional, recommended at mount site) — returns the visible radius for `node`. When omitted, `defaultRadiusFor(node)` uses V51's kind-aware curve (`ring`: `min(36, 10 + 4 * sqrt(w))`; `format`: `min(44, 12 + 5 * sqrt(w))`). Pass `radiusFor: (n) => radiusForWeight(n.weight, n.kind)` at the mount site so layout and drawing stay locked together; both formulas agree.
+- `onOpenNode(node)` — called when the user clicks the detail panel's Open button.
+- `onStartRing()` / `onNewTemplate()` — create-bar handlers (fall back to `#/rings` and `#/campaigns/new` when omitted).
+- `usageNote` (optional) — honest-limits line rendered with format usage counts and as the view footnote.
+- `width`, `height` (optional, defaults `800` × `520`) — initial viewBox aspect ratio.
+- `location` (optional) — override for hash fallback in non-browser tests.
+
+## CSS you must supply (coordinator's `style.css`)
+The module emits unstyled SVG and HTML elements; the coordinator's `style.css` MUST provide:
+1. **Edge and shape `fill` / `stroke`**: Unstyled SVG `<line>` edges have no stroke (invisible) and `<circle>`/`<polygon>` shapes paint solid black by default. Supply explicit `stroke` / `stroke-width` / `opacity` for `.node-edge`, `.node-edge--runs`, `.node-edge--shares-member`, and `.node-edge--shares-tag`, explicit `fill` / `stroke` for `.node-shape`, `.node-shape--ring`, and `.node-shape--format`, and `fill` for `.node-label`.
+2. **`.node-svg` aspect ratio**: Match the `width` / `height` passed to `mount()` (default `800 / 520`), e.g. `width: 100%; aspect-ratio: 800 / 520; height: auto;`. Do not set conflicting fixed `width` and `height` values — `preserveAspectRatio` letterboxing causes pointer-to-world and pan scaling drift.
+3. **Reduced motion**: Under `@media (prefers-reduced-motion: reduce)`, set `transition: none; animation: none;` on all `.node-*` classes (no transitions or animations on hover, focus, selection, dimming, or panel state). The module itself performs instant viewBox and class updates with zero JS animation.
+
 ## CSS classes emitted (for coordinator's `style.css`)
 Mapped to the existing Dark Souls tokens in `style.css` (`--cabal-ground`, `--cabal-panel`, `--cabal-hairline`, `--cabal-ember`, `--cabal-ember-deep`, `--cabal-gold`, `--cabal-bone`, `--cabal-muted`, `--cabal-ember-glow`, `--cabal-display`, `--cabal-serif-body`, `--cabal-radius`):
 
@@ -29,7 +45,7 @@ Mapped to the existing Dark Souls tokens in `style.css` (`--cabal-ground`, `--ca
   - `.node-view-grid` — 2-column grid on desktop (`1fr 320px`), 1-column stack on mobile
 - **Create bar & filters**
   - `.node-view-actions` — top create bar (visible without scrolling on desktop, stacks on mobile)
-  - `.node-action` — create bar button base
+  - `.node-action` — wrapper `<div>` around each create button and its `.node-action-help` line (the buttons themselves are `.node-action-start` and `.node-action-template`)
   - `.node-action-start` (+ `.primary`) — "Start a ring" primary CTA (`--cabal-ember` / `--cabal-ember-deep`, `--cabal-radius`)
   - `.node-action-template` — "New campaign template" secondary CTA (`--cabal-panel`, `--cabal-hairline`, `--cabal-bone`, `--cabal-radius`)
   - `.node-action-help` (+ `.view-lede`) — brief helper line (`--cabal-muted`, `--cabal-serif-body`)
@@ -83,7 +99,8 @@ Mapped to the existing Dark Souls tokens in `style.css` (`--cabal-ground`, `--ca
 - **Deselection**: Tap empty stage space, click `.node-panel-close`, or press `Escape`; verify selection and dimming clear.
 - **Keyboard accessibility**: Press `Tab` to reach each node (`tabindex="0"`, `role="button"`), press `Enter` or `Space` to select, and `Escape` to deselect.
 - **Pan & zoom**: Drag to pan (clamped so the graph cannot leave the viewport), wheel to zoom around cursor, pinch to zoom on touch, and click `+` / `−` / `↺` buttons to zoom/reset within bounds.
-- **Reduced motion**: Enable `prefers-reduced-motion: reduce`; verify zero animations or transitions, and that pan, zoom, and selection apply as instant jumps.
+- **Reduced motion**: Enable `prefers-reduced-motion: reduce`; verify zero animations or transitions across all `.node-*` CSS rules, and that pan, zoom, and selection apply as instant jumps.
+- **Tap target on mobile**: At ~360px viewport width (and when zoomed out), verify `.node-halo` `r` scales with `viewBox.w / svgRect.width` so every node keeps a `>= 44 CSS px` tap target, and tapping overlapping edges selects the smaller node consistently with `nodeAtPoint`.
 - **Create actions**: Verify "Start a ring" and "New campaign template" are visible above the fold on desktop and reachable on mobile; verify they invoke `ctx.onStartRing` / `ctx.onNewTemplate` or fall back to `#/rings` / `#/campaigns/new`.
 - **Empty graph**: Mount with an empty graph; verify it renders the honest share-requirement copy without softening it.
 

@@ -9,6 +9,7 @@ import {
   DEFAULT_WIDTH,
   DEFAULT_HEIGHT,
   HALO_MIN_RADIUS,
+  DEFAULT_RADIUS,
   EMPTY_STATE_COPY,
   START_RING_ACTION,
   NEW_TEMPLATE_ACTION,
@@ -140,35 +141,68 @@ test("positionOf returns null for missing, prototype, or non-finite entries", ()
 
 // ---- defaultRadiusFor & haloRadiusFor ----
 
-test("defaultRadiusFor is monotonic and capped within [14, 38]", () => {
-  const rNeg = defaultRadiusFor({ weight: -5 });
-  const rZero = defaultRadiusFor({ weight: 0 });
-  const rOne = defaultRadiusFor({ weight: 1 });
-  const rTwo = defaultRadiusFor({ weight: 2 });
-  const rNine = defaultRadiusFor({ weight: 9 });
-  const rHuge = defaultRadiusFor({ weight: 1000 });
+test("defaultRadiusFor is kind-aware and matches V51 constants (ring [10,36], format [12,44])", () => {
+  assert.deepEqual(DEFAULT_RADIUS.ring, { base: 10, scale: 4, max: 36 });
+  assert.deepEqual(DEFAULT_RADIUS.format, { base: 12, scale: 5, max: 44 });
 
-  assert.equal(rNeg, 14);
-  assert.equal(rZero, 14);
-  assert.equal(defaultRadiusFor(null), 14);
-  assert.equal(defaultRadiusFor({ weight: NaN }), 14);
+  // Ring curve: min(36, 10 + 4 * sqrt(w))
+  const rNeg = defaultRadiusFor({ kind: "ring", weight: -5 });
+  const rZero = defaultRadiusFor({ kind: "ring", weight: 0 });
+  const rOne = defaultRadiusFor({ kind: "ring", weight: 1 });
+  const rTwo = defaultRadiusFor({ kind: "ring", weight: 2 });
+  const rNine = defaultRadiusFor({ kind: "ring", weight: 9 });
+  const rHuge = defaultRadiusFor({ kind: "ring", weight: 1000 });
+
+  assert.equal(rNeg, 10);
+  assert.equal(rZero, 10);
+  assert.equal(defaultRadiusFor(null), 10);
+  assert.equal(defaultRadiusFor({ weight: NaN }), 10);
+  assert.equal(rOne, 14);
+  assert.ok(Math.abs(rTwo - (10 + 4 * Math.sqrt(2))) < 1e-9);
+  assert.equal(rNine, 22);
   assert.ok(rZero < rOne && rOne < rTwo && rTwo < rNine);
-  assert.equal(rHuge, 38);
-  assert.ok(rNine >= 14 && rNine <= 38);
+  assert.equal(rHuge, 36);
+
+  // Format curve: min(44, 12 + 5 * sqrt(w))
+  const fZero = defaultRadiusFor({ kind: "format", weight: 0 });
+  const fOne = defaultRadiusFor({ kind: "format", weight: 1 });
+  const fThree = defaultRadiusFor({ kind: "format", weight: 3 });
+  const fHuge = defaultRadiusFor({ kind: "format", weight: 1000 });
+
+  assert.equal(fZero, 12);
+  assert.equal(fOne, 17);
+  assert.ok(Math.abs(fThree - (12 + 5 * Math.sqrt(3))) < 1e-9);
+  assert.ok(fZero < fOne && fOne < fThree && fThree < fHuge);
+  assert.equal(fHuge, 44);
 });
 
-test("haloRadiusFor enforces >= 22px radius (44px tap diameter) and respects custom radiusFor", () => {
-  assert.ok(haloRadiusFor({ weight: 0 }) >= HALO_MIN_RADIUS);
-  assert.equal(haloRadiusFor({ weight: 0 }, () => 6), HALO_MIN_RADIUS);
-  assert.equal(haloRadiusFor({ weight: 0 }, () => 30), 38);
+test("haloRadiusFor enforces >= 22 CSS px radius scaled by unitsPerPx and respects custom radiusFor", () => {
+  assert.ok(haloRadiusFor({ kind: "ring", weight: 0 }) >= HALO_MIN_RADIUS);
+  assert.equal(haloRadiusFor({ kind: "ring", weight: 0 }, () => 6), HALO_MIN_RADIUS);
+  assert.equal(haloRadiusFor({ kind: "ring", weight: 0 }, () => 30), 38);
+
+  // Screen-px scaling: e.g. 720 user units across a 360 CSS px stage -> unitsPerPx = 2
+  const mobileHalo = haloRadiusFor({ kind: "ring", weight: 2 }, null, 2);
+  assert.equal(mobileHalo, HALO_MIN_RADIUS * 2);
+  assert.ok(mobileHalo / 2 >= 22, "halo must remain >= 22 CSS px radius on narrow viewports");
+
+  // Zoomed in (unitsPerPx < 1): visible radius + 8 still applies
+  const zoomedInHalo = haloRadiusFor({ kind: "format", weight: 4 }, null, 0.5); // r = 22
+  assert.equal(zoomedInHalo, 30);
+
+  // Non-finite or <= 0 unitsPerPx falls back to 1
+  assert.equal(haloRadiusFor({ kind: "ring", weight: 0 }, null, NaN), HALO_MIN_RADIUS);
+  assert.equal(haloRadiusFor({ kind: "ring", weight: 0 }, null, 0), HALO_MIN_RADIUS);
+  assert.equal(haloRadiusFor({ kind: "ring", weight: 0 }, null, -3), HALO_MIN_RADIUS);
+
   // Invalid custom radius falls back to defaultRadiusFor
   assert.equal(
-    haloRadiusFor({ weight: 2 }, () => -10),
-    haloRadiusFor({ weight: 2 }),
+    haloRadiusFor({ kind: "ring", weight: 2 }, () => -10),
+    haloRadiusFor({ kind: "ring", weight: 2 }),
   );
   assert.equal(
-    haloRadiusFor({ weight: 2 }, () => NaN),
-    haloRadiusFor({ weight: 2 }),
+    haloRadiusFor({ kind: "ring", weight: 2 }, () => NaN),
+    haloRadiusFor({ kind: "ring", weight: 2 }),
   );
 });
 
@@ -295,10 +329,11 @@ test("nodeAtPoint hits nodes within halo for both Map and plain-object positions
     assert.equal(nodeAtPoint(graph, 230, 300)?.id, "fmt_devlog01");
     assert.equal(nodeAtPoint(graph, 560, 260)?.id, "ring_starlight_fest");
 
-    // Inside halo outside visible radius of ring_starlight_fest (weight 1 -> r=20, halo=28)
-    assert.equal(nodeAtPoint(graph, 560 + 25, 260)?.id, "ring_starlight_fest");
-    // Outside halo
-    assert.equal(nodeAtPoint(graph, 560 + 35, 260), null);
+    // Inside halo outside visible radius of ring_starlight_fest (weight 1 -> r=14, halo=22)
+    assert.equal(nodeAtPoint(graph, 560 + 20, 260)?.id, "ring_starlight_fest");
+    // Outside halo at 1:1 scale, but inside halo when scaled for a narrow viewport (unitsPerPx = 2 -> halo=44)
+    assert.equal(nodeAtPoint(graph, 560 + 30, 260), null);
+    assert.equal(nodeAtPoint(graph, 560 + 30, 260, { unitsPerPx: 2 })?.id, "ring_starlight_fest");
     assert.equal(nodeAtPoint(graph, -500, -500), null);
   }
 
@@ -349,6 +384,22 @@ test("nodeAtPoint tie-breaking: smallest visible radius, then closest center, th
     nodeAtPoint(overlapSize, 100, 100, { radiusFor: (n) => (n.id === "large" ? 10 : 30) })?.id,
     "large",
   );
+
+  // DOM-order disagreement: ring emitted before a larger format (V51 emit order);
+  // tapping the ring's edge where the later format's halo overlaps still selects the smaller ring.
+  const domOrderDisagreement = {
+    nodes: [
+      { id: "ring:r1", kind: "ring", label: "Small Ring", weight: 2, ref: "r1" }, // r ≈ 15.66, halo ≈ 23.66
+      { id: "format:f1", kind: "format", label: "Big Format", weight: 16, ref: "f1" }, // r = 32, halo = 40
+    ],
+    edges: [{ from: "ring:r1", to: "format:f1", kind: "runs" }],
+    positions: new Map([
+      ["ring:r1", { x: 100, y: 100 }],
+      ["format:f1", { x: 140, y: 100 }],
+    ]),
+  };
+  // Point (112, 100) is inside ring:r1's visible circle AND inside format:f1's halo (dist 28 <= 40)
+  assert.equal(nodeAtPoint(domOrderDisagreement, 112, 100)?.id, "ring:r1");
 });
 
 // ---- visibleEdges ----
@@ -457,4 +508,74 @@ test("formatUsageLine formats positive format weights and never outputs '0 rings
   assert.equal(formatUsageLine(NODES[1]), "");
   assert.equal(formatUsageLine(null), "");
   assert.equal(formatUsageLine(undefined), "");
+});
+
+// ---- V51 <-> V52 seam fixture ----
+
+const V51_GRAPH = {
+  nodes: [
+    { id: "ring:r1", kind: "ring", label: "Starlight Salvage", weight: 2, ref: "r1" },
+    { id: "ring:r2", kind: "ring", label: "ToonSouls", weight: 3, ref: "r2" },
+    { id: "ring:r3", kind: "ring", label: "Mosskeep", weight: 2, ref: "r3" },
+    { id: "format:f1", kind: "format", label: "Weekly Devlog Swap", weight: 3, ref: "f1" },
+  ],
+  edges: [
+    { from: "ring:r1", to: "format:f1", kind: "runs" },
+    { from: "ring:r2", to: "format:f1", kind: "runs" },
+    { from: "ring:r1", to: "ring:r2", kind: "shares-member" },
+  ],
+  // Positions produced by V51's layoutGraph on this exact graph at 800x520
+  positions: new Map([
+    ["format:f1", { x: 430.0400438058992, y: 241.49073651117143 }],
+    ["ring:r1", { x: 372.04141262801744, y: 245.04532524266696 }],
+    ["ring:r2", { x: 390.4110744455803, y: 196.2523509752898 }],
+    ["ring:r3", { x: 547.9770343078225, y: 453.00983735929503 }],
+  ]),
+};
+
+test("V51-shaped fixture: prefixed ids, bare ref, Map positions work across all helpers", () => {
+  for (const node of V51_GRAPH.nodes) {
+    const pos = positionOf(V51_GRAPH.positions, node.id);
+    assert.ok(pos, `positionOf resolves ${node.id}`);
+    const hit = nodeAtPoint(V51_GRAPH, pos.x, pos.y);
+    assert.equal(hit?.id, node.id);
+    assert.equal(hit?.ref, node.ref);
+  }
+
+  assert.equal(visibleEdges(V51_GRAPH, "format:f1").length, 2);
+  assert.equal(visibleEdges(V51_GRAPH, "ring:r3").length, 0);
+  assert.equal(formatUsageLine(V51_GRAPH.nodes[3]), "Used by 3 rings");
+
+  const vb = viewBoxFor(V51_GRAPH, { width: 800, height: 520 });
+  for (const k of ["x", "y", "w", "h"]) {
+    assert.ok(Number.isFinite(vb[k]), `vb.${k} must be finite`);
+  }
+});
+
+test("V51 radius seam: no two nodes overlap beyond V51's 0.9 factor under defaultRadiusFor", () => {
+  const v51RadiusFor = (n) => {
+    const p = n.kind === "format" ? { base: 12, scale: 5, max: 44 } : { base: 10, scale: 4, max: 36 };
+    const w = Number.isFinite(n.weight) && n.weight > 0 ? n.weight : 0;
+    return Math.min(p.max, p.base + p.scale * Math.sqrt(w));
+  };
+
+  for (const node of V51_GRAPH.nodes) {
+    assert.equal(defaultRadiusFor(node), v51RadiusFor(node), `defaultRadiusFor matches V51 for ${node.id}`);
+  }
+
+  for (let i = 0; i < V51_GRAPH.nodes.length; i++) {
+    for (let j = i + 1; j < V51_GRAPH.nodes.length; j++) {
+      const a = V51_GRAPH.nodes[i];
+      const b = V51_GRAPH.nodes[j];
+      const pa = positionOf(V51_GRAPH.positions, a.id);
+      const pb = positionOf(V51_GRAPH.positions, b.id);
+      const dist = Math.hypot(pb.x - pa.x, pb.y - pa.y);
+      const ra = defaultRadiusFor(a);
+      const rb = defaultRadiusFor(b);
+      assert.ok(
+        dist >= 0.9 * (ra + rb) - 1e-6,
+        `${a.id} and ${b.id} overlap beyond V51's 0.9 factor (dist=${dist.toFixed(2)}, min=${(0.9 * (ra + rb)).toFixed(2)})`,
+      );
+    }
+  }
 });
