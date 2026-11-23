@@ -7,38 +7,38 @@ export const INTRO_PAGES = [
     id: "intro",
     route: "#/intro",
     title: "What Cabal is",
-    lede: "A small, quiet pact between developers. You light your game. Others carry the flame.",
+    lede: "A small, quiet pact between developers. You light your game. Others carry the flame, and keep carrying it.",
     sections: [
       {
-        heading: "A ring for indie games",
+        heading: "A ring that keeps going",
         paragraphs: [
-          "Cabal is mutual aid for indie developers. You gather a ring of other devs, and when one of you has news, the ring amplifies it. Each person does it in their own voice.",
-          "It is built around one thing: your game. Everything else in the app serves a push for that game.",
+          "Cabal is mutual aid for indie developers. You gather a ring of other devs, and as each of you makes news, the ring amplifies it. Not once: again and again, as everyone's game moves forward. Each person does it in their own voice.",
+          "The founding post is the start of a ring, not the whole campaign. Posts keep arriving, and the ring keeps assisting them.",
         ],
       },
       {
         heading: "Your game stands at the center",
         paragraphs: [
-          "No game, no campaign. A campaign is always about a game you made, and what gets amplified is always your own announcement. It is never a target, never a person, never a pile-on.",
+          "No game, no ring. A ring is always about a game you made, and what gets amplified is always a ringmate's own post about their work. It is never a target, never a person, never a pile-on.",
         ],
       },
       {
         heading: "The link is the invite",
         paragraphs: [
-          "A campaign is a link. Whoever holds the link can open it and join. Keep it in a DM and the ring stays closed. Drop it where devs gather and the ring can grow. There is no approval queue and no gatekeeper.",
-          "The campaign page shows the whole ring: who is in, and who has posted.",
+          "A ring can be shared as a link. Whoever holds the link can open it and join. Keep it in a DM and the ring stays closed. Drop it where devs gather and the ring can grow. There is no approval queue and no gatekeeper.",
+          "The campaign page shows the ring as a feed: who is in, the posts they have added, and the receipts of who assisted each one.",
         ],
       },
       {
-        heading: "No accounts, no server",
+        heading: "No accounts, no password",
         paragraphs: [
-          "You are anonymous. There are no accounts and no backend. Your game and your campaigns live in your own browser. Cabal never posts for you, and it never holds a password or a token.",
+          "You are anonymous. There are no accounts. Your game and your campaigns live in your own browser. Cabal never posts for you, and it never holds a password or a platform token.",
         ],
       },
       {
         heading: "What it does today, plainly",
         paragraphs: [
-          "Today Cabal helps you make a campaign, share its link, write your own quote-post with a similarity check, and see who has posted. Because there is no server, there is no live updating. A link carries the campaign as it was when it was copied. Opening a link adds a campaign you do not have yet; if you already have it, the link does not update your copy. The ring is only as current as the newest link each person opened. That is a real limit, and it is not hidden here.",
+          "Today Cabal helps you start a ring, add posts from any platform, assist a ringmate's post, and leave a receipt of what you did. How a ring stays current across people is covered on the theory page, including what is public and what is not.",
         ],
       },
     ],
@@ -47,56 +47,44 @@ export const INTRO_PAGES = [
     id: "how",
     route: "#/intro/how",
     title: "How a campaign works",
-    lede: "Six steps. None of them post on your behalf.",
+    lede: "A rhythm, not a deadline. None of it posts on your behalf.",
     sections: [
       {
-        heading: "1. Make a campaign",
+        heading: "1. Start or join a ring",
         paragraphs: [
-          "Tell Cabal about your game: its name and its store page. Then start a campaign around the one post you want amplified.",
+          "Tell Cabal about your game: its name and its store page. Start a ring around it, or open a ring's link and join with one tap. No sign-up.",
         ],
       },
       {
-        heading: "2. Share its link",
+        heading: "2. Add posts as you make them",
         paragraphs: [
-          "The campaign is a link that carries the campaign with it. Send it to the devs you want in your ring, in a DM, a Discord, or a board you already use.",
+          "Made something worth showing? Add the post to the ring, from any platform: a URL and a label. Cabal can guess the platform, the author, or a title from the link. You can always fill in or fix the bits by hand, and a link it does not recognise just means you type them yourself.",
         ],
       },
       {
-        heading: "3. People join from the link",
+        heading: "3. Assist your ringmates' new posts",
         paragraphs: [
-          "Opening the link shows the game, the post to amplify, and the whole ring. A visitor can join with one tap. No sign-up.",
+          "When a ringmate adds a post, give it a hand. On X, the composer opens with their post attached, you write your own words, and Cabal warns you if your draft sits too close to someone else's. It never blocks you. Everywhere else, you share the post on in your own way and mark it contributed.",
+          "Then leave an Enscryption: one line, in your own words, saying what you did. \"Liked. Retweeted. Commented. Shared to #Ring.\" These receipts are the comments under each post. They are the record, not a score. Nobody counts them.",
         ],
       },
       {
-        heading: "4. Everyone writes their own quote-post",
+        heading: "4. Pass it on",
         paragraphs: [
-          "The composer opens with the original post attached. You write your own words and tap Post in the platform's own composer. Cabal warns you if your draft is too close to someone else's. It never blocks you.",
+          "A ringmate's post travels further when a real reader shares it. If one speaks to you, share its link onward: drop it in your own #Ring channel, your Discord or community channel where your people actually are, or wherever else your community gathers, with a line of your own.",
+          "Only what you genuinely like; no one counts it, and no one owes it.",
         ],
       },
       {
-        heading: "5. The page shows who has posted",
+        heading: "5. Keep the ring warm",
         paragraphs: [
-          "Once you have posted, you add your quote-post link, and you are marked as posted on the ring.",
-        ],
-      },
-      {
-        heading: "6. Pass it on",
-        paragraphs: [
-          "Open a ringmate's quote-post from the campaign page. If it speaks to you, share its link onward — drop it in your own #Ring channel, your Discord or community channel where your people actually are, or wherever else your community gathers, with a line of your own.",
-          "A post passed on by a real reader travels further than the anchor alone. Only what you genuinely like; no one counts it, and no one owes it.",
-        ],
-      },
-      {
-        heading: "How the ring stays in sync",
-        paragraphs: [
-          "There is no server, so there is no live updating. A link carries the campaign as it was when it was copied. Opening a link adds a campaign you do not have yet — it does not update one you already have. Sharing your link again gives newcomers your copy as it stands, so a new member sees the latest roster and who has posted.",
-          "That means the ring is only as current as the newest link each person opened. Merging an updated link into a campaign you already have is planned, not built yet.",
+          "The rhythm repeats. There is no window and no deadline. A quiet ring is a resting ring, not a dead one: the next post picks it back up.",
         ],
       },
       {
         heading: "Finding other rings",
         paragraphs: [
-          "A campaign can appear in discovery if it attaches a real game page and has at least two developers in it. The ring is the proof. A campaign with no real members stays invisible.",
+          "A ring can appear in discovery if it attaches a real game page and has at least two developers in it. The ring is the proof. A ring with no real members stays invisible.",
         ],
       },
     ],
@@ -105,12 +93,18 @@ export const INTRO_PAGES = [
     id: "theory",
     route: "#/intro/theory",
     title: "The theory",
-    lede: "Same campaign, different post.",
+    lede: "Same campaign, different post. Over and over.",
     sections: [
+      {
+        heading: "Sustained mutual aid: the ring compounds",
+        paragraphs: [
+          "A single burst fades. A ring that keeps assisting each other's posts as they come builds up: more people have seen your game, more of them have seen it twice, and the next post lands on warmer ground. The aid is repeated, and each round stands on the last.",
+        ],
+      },
       {
         heading: "Same campaign, different post",
         paragraphs: [
-          "One shared brief: the facts, the link, the clip. Then every dev writes a post of their own. The campaign is the same. The posts are not.",
+          "The campaign is the ring and the game at its center. The posts are what the ring assists, one at a time. Every assist is per post: a ringmate helping with one post has not helped with the next, and nobody has to pretend they did.",
         ],
       },
       {
@@ -120,21 +114,34 @@ export const INTRO_PAGES = [
         ],
       },
       {
+        heading: "Two tiers, in plain language",
+        paragraphs: [
+          "A ring post can come from any platform: Reddit, Instagram, anywhere. For those, Cabal keeps it simple: a link, a label, and you mark that you contributed. Nothing is checked, and nothing is wired into the other app. On X, Cabal goes further: a quote-post composer with the original attached and the similarity check on your draft. Same ring, two levels of help.",
+        ],
+      },
+      {
         heading: "A human taps Post",
         paragraphs: [
           "Every post is written by a person and sent by a person, in the platform's own composer. Cabal does not auto-post, auto-like, auto-follow, or auto-comment. There are no quotas and no scores for posting.",
         ],
       },
       {
-        heading: "Staggered, not a burst",
+        heading: "Pass it on: the core loop",
         paragraphs: [
-          "People post when they can, spread across the window. A burst of posts in the same minute looks coordinated, and it is. A trickle looks like what it is: friends noticing a game.",
+          "Once a ringmate has posted, their post is its own thing, and it can travel on its own. When a reader copies a post's link and shares it onward, that carries real weight: a human chose to pass it on, not a button.",
+          "So open your ringmates' posts. If one speaks to you, share its link in your own #Ring channel or wherever your people gather, in your own words. That is the heart of the ring: the founding post starts it, and every post passed on by a real reader carries it further. Only ever what you genuinely like. No one counts shares, and no one owes any.",
+        ],
+      },
+      {
+        heading: "Open-ended by design",
+        paragraphs: [
+          "A ring has no window and no deadline. A deadline turns help into a chore and a burst into a tell. Without one, people assist when they can, spread across days and weeks, which is how friends actually notice a game. A ring that goes quiet is resting, and any new post wakes it.",
         ],
       },
       {
         heading: "Amplify an announcement, never a target",
         paragraphs: [
-          "What the ring lifts is always the dev's own announcement. The same mechanics could be used against a person, and that is exactly what Cabal is not for. If it would feel like an attack to the one on the receiving end, do not do it.",
+          "What the ring lifts is always a dev's own post about their own work. The same mechanics could be used against a person, and that is exactly what Cabal is not for. If it would feel like an attack to the one on the receiving end, do not do it.",
         ],
       },
       {
@@ -146,14 +153,14 @@ export const INTRO_PAGES = [
       {
         heading: "Why a quote-post and not a plain repost",
         paragraphs: [
-          "A plain repost is one signal, and a stack of them tends to collapse into a single feed candidate. A quote-post carries your own words, so it reaches your followers as something you said. A bare \"Big news!\" does not count: add something real.",
+          "On X, a plain repost is one signal, and a stack of them tends to collapse into a single feed candidate. A quote-post carries your own words, so it reaches your followers as something you said. A bare \"Big news!\" does not count: add something real.",
         ],
       },
       {
-        heading: "Pass it on: the post travels further than the anchor",
+        heading: "How the ring stays in sync, and what is public",
         paragraphs: [
-          "Once a ringmate has quote-posted, their post is its own thing — and it can travel on its own. When a reader copies a post's link and shares it onward, that carries real weight: a human chose to pass it on, not a button.",
-          "So open your ringmates' quote-posts. If one speaks to you, share its link in your own #Ring channel or wherever your people gather, in your own words. That is the second half of the ring: the anchor starts it, the ringmates' posts carry it. Only ever what you genuinely like. No one counts shares, and no one owes any.",
+          "A ring syncs through public relays: open servers that hold the ring's posts and receipts so every member's copy can catch up. A link is the offline fallback. It carries a snapshot of the ring for someone with no relay access, and it can add a ring you do not have yet.",
+          "The privacy reality, plainly: anything on a public relay is public. Campaign content is public by design, and discovery is public anyway. Never put anything private in a post or a receipt. A relay post cannot be reliably deleted, so do not treat it as private, direct, or taken back.",
         ],
       },
       {

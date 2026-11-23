@@ -47,11 +47,10 @@ test("routes exist and resolve to their page ids", () => {
   assert.equal(introPageIdForRoute("#/x"), null);
 });
 
-test("how page teaches passing it on, with the #Ring channel named", () => {
+test("how page teaches passing it on, with the #Ring channel named (V40: step 4, core loop)", () => {
   const how = getIntroPage("how");
-  assert.match(how.lede, /Six steps/);
-  const step = how.sections.find((s) => s.heading.startsWith("6."));
-  assert.ok(step, "step 6 exists");
+  const step = how.sections.find((s) => s.heading.startsWith("4."));
+  assert.ok(step, "step 4 exists");
   assert.match(step.heading, /Pass it on/);
   const text = step.paragraphs.join(" ");
   assert.match(text, /#Ring channel/);
