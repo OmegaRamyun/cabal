@@ -5,12 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>Cabal Ring Kit — campaign-first</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%230b0908'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23c9a24a' stroke-width='2.5'/%3E%3C/svg%3E">
   <link rel="alternate" type="application/atom+xml" title="Cabal — discover campaigns" href="campaigns.atom">
-  <link rel="stylesheet" href="vendor/pico.min.css">
+  <link rel="stylesheet" href="vendor/modern-normalize.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header>
+  <header class="app-header">
     <div class="topbar">
       <h1 class="brand"><a href="#/">Cabal</a></h1>
       <nav aria-label="Views">
@@ -35,17 +36,20 @@
         </div>
       </nav>
     </div>
+  </header>
+  <div class="app-banners">
     <div id="demo-banner"></div>
     <div id="update-banner"></div>
-  </header>
-  <main>
+  </div>
+  <main class="app-main">
     <div id="view"></div>
     <div id="home-extras"></div>
     <div id="campaign-extras"></div>
   </main>
-  <footer>
+  <footer class="app-footer">
     <p class="explainer">Cabal is for promoting your own games. A disclaimer states the terms; it is not a shield. <a href="#/terms">Read the terms</a> · <a href="#/intro">What Cabal is</a>.</p>
   </footer>
+  <script type="module" src="src/shell.mjs"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>
