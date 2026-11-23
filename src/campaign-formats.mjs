@@ -186,6 +186,64 @@ export function ringsRunningFormat(formatId, rings) {
   );
 }
 
+/**
+ * postersForFormat(formatId, rings) ->
+ *   [{ handle, name, rings: [{ ringId, ringTitle }] }]
+ * V60 (Cade: a template is the node of everybody who has posted it): the devs
+ * who have posted under a template — post authors + assist contributors
+ * across every ring running it. Deduped by handle (case-insensitive, leading
+ * `@` ignored); the display handle keeps its first-seen casing, and `name`
+ * resolves from the first matching ring member record, else the handle.
+ * `rings` lists each ring the dev posted in (first-seen order). Rings with
+ * no posts contribute nothing. Never throws.
+ */
+export function postersForFormat(formatId, rings) {
+  const running = ringsRunningFormat(formatId, rings);
+  const byKey = new Map();
+  const order = [];
+  const ringTitle = (r) => {
+    if (typeof r?.title === "string" && r.title.trim()) return r.title.trim();
+    if (typeof r?.game?.name === "string" && r.game.name.trim()) return r.game.name.trim();
+    return typeof r?.id === "string" ? r.id : "";
+  };
+  const memberName = (ring, handle) => {
+    const members = Array.isArray(ring?.members) ? ring.members : [];
+    const hit = members.find((m) => handleKey(m?.handle) === handleKey(handle));
+    return typeof hit?.name === "string" && hit.name.trim() ? hit.name.trim() : null;
+  };
+  const note = (ring, handle) => {
+    const key = handleKey(handle);
+    if (!key) return;
+    const display = typeof handle === "string" && handle.trim() ? handle.trim() : key;
+    let entry = byKey.get(key);
+    if (!entry) {
+      entry = { handle: display, name: null, rings: [] };
+      byKey.set(key, entry);
+      order.push(entry);
+    }
+    if (!entry.name) entry.name = memberName(ring, handle);
+    const title = ringTitle(ring);
+    if (!entry.rings.some((x) => x.ringId === ring?.id)) {
+      entry.rings.push({ ringId: ring?.id ?? "", ringTitle: title });
+    }
+  };
+  for (const ring of running) {
+    const posts = Array.isArray(ring?.posts) && ring.posts.length > 0
+      ? ring.posts
+      : ring?.anchorPost && typeof ring.anchorPost === "object"
+        ? [ring.anchorPost]
+        : [];
+    for (const post of posts) {
+      if (!isObj(post)) continue;
+      note(ring, post.author);
+      for (const assist of Array.isArray(post.assists) ? post.assists : []) {
+        if (isObj(assist)) note(ring, assist.handle);
+      }
+    }
+  }
+  return order.map((e) => ({ handle: e.handle, name: e.name || e.handle, rings: e.rings }));
+}
+
 // ---- V59: format-page adopt helpers (pure) ----
 
 /**
@@ -552,6 +610,23 @@ export function mount(rootEl, ctx = {}) {
     ringList.appendChild(li);
   }
   page.appendChild(ringList);
+
+  // V60: a template is the node of everybody who has posted it — show WHO,
+  // not just a count: the devs behind the posts under this template.
+  const posters = postersForFormat(f.id, rings);
+  page.appendChild(el(doc, "h3", "Posted by", "section-eyebrow"));
+  const posterList = el(doc, "ul", null, "format-posters");
+  if (!posters.length) {
+    posterList.appendChild(el(doc, "li", "No posts under this template yet.", "empty-state"));
+  }
+  for (const p of posters) {
+    const li = el(doc, "li");
+    li.appendChild(el(doc, "span", p.name, "format-poster-name"));
+    const inRings = p.rings.map((x) => x.ringTitle).filter(Boolean).join(", ");
+    if (inRings) li.appendChild(el(doc, "span", `in ${inRings}`, "format-poster-rings"));
+    posterList.appendChild(li);
+  }
+  page.appendChild(posterList);
   rootEl.appendChild(page);
 }
 

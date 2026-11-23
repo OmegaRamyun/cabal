@@ -1972,6 +1972,46 @@ button.new-template {
   flex: 0 0 auto;
 }
 
+/* ---- V60: template "Posted by" rosters (format page + node panel) ---- */
+.format-posters,
+.node-panel-posters {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.format-posters li,
+.node-panel-posters li {
+  list-style: none;
+  margin: 0;
+  padding: 0.35rem 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--cabal-hairline, #2a211a);
+}
+
+.format-posters li:last-child,
+.node-panel-posters li:last-child {
+  border-bottom: 0;
+}
+
+.format-poster-name,
+.node-panel-poster-name {
+  color: var(--cabal-bone, #d8cfc0);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.format-poster-rings,
+.node-panel-poster-rings {
+  color: var(--cabal-muted, #9a8f7e);
+  font-size: 0.76rem;
+}
+
 /* ---- Mobile bottom sheet (< 900px) ---- */
 .node-sheet-handle-area,
 .node-sheet-backdrop {

@@ -126,10 +126,10 @@ describe('nodeViewGraph', () => {
 });
 
 describe('demo data runs formats', () => {
-  test('static ToonSouls runs fmt_oneclip1', () => {
+  test('static ToonSouls runs fmt_oneclip1 + fmt_algoigno (V60: two templates)', () => {
     const data = JSON.parse(fs.readFileSync(new URL('../data/campaigns.json', import.meta.url), 'utf8'));
     const toon = data.campaigns.find((c) => c.id === 'cmp_toon001');
-    assert.equal(toon.formatId, 'fmt_oneclip1');
+    assert.deepEqual(toon.formatIds, ['fmt_oneclip1', 'fmt_algoigno']);
   });
   test('seeded launch-week ring runs fmt_algoigno', () => {
     const seeded = demoCampaigns(new Date('2026-11-23T12:00:00Z'));
