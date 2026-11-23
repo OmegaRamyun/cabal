@@ -49,6 +49,18 @@ describe('V48 new routes', () => {
   });
 });
 
+describe('V49 integration wiring (campaigns-new route)', () => {
+  test('parseHash: #/campaigns/new is its own view; #/campaigns unchanged', () => {
+    assert.deepEqual(parseHash('#/campaigns/new'), { view: 'campaigns-new' });
+    assert.deepEqual(parseHash('#/campaigns'), { view: 'campaigns' });
+    assert.deepEqual(parseHash('#/campaigns/'), { view: 'campaigns' });
+  });
+  test('navItemForView: campaigns-new highlights the Campaigns nav item', () => {
+    assert.equal(navItemForView('campaigns-new'), 'discover');
+    assert.equal(navItemForView('campaigns'), 'discover');
+  });
+});
+
 describe('V48 usage seam (V46 shape into discovery)', () => {
   const fmtA = { id: 'fmt_algoigno', tagline: 'A', description: '', howTo: '', examples: [], tags: [] };
   const fmtB = { id: 'fmt_weekship', tagline: 'B', description: '', howTo: '', examples: [], tags: [] };

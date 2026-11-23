@@ -143,6 +143,20 @@ button.quote-posted:hover {
   border-color: var(--pico-primary-hover-border);
 }
 
+/* ---- V49 create actions: big, obvious, on the view itself ---- */
+.start-ring button.primary,
+button.new-template {
+  font-size: 1.1rem;
+  padding: 0.75rem 1.5rem;
+}
+.view-create { margin: 1rem 0 0.5rem; }
+.format-create-form label { display: block; margin-bottom: 0.75rem; }
+.format-create-form .field-hint {
+  color: var(--pico-muted-color);
+  font-size: 0.9rem;
+  margin: 0.25rem 0 0.75rem;
+}
+
 /* ---- forms ---- */
 .form-error { color: var(--cabal-danger); font-weight: 600; }
 label input, label select, label textarea { margin-top: 0.25rem; }

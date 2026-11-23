@@ -8,6 +8,7 @@
 //   #/composer/<id>       quote composer for that campaign
 //   #/discover            legacy route to the Campaigns view
 //   #/campaigns           Campaigns — blowing-up templates, most-used first
+//   #/campaigns/new       New campaign template (V49 create form)
 //   #/format/<id>         one campaign template's page
 //   #/tools               campaign tools (Kickstarter, Steam, Discord, checklist)
 //   #/terms               disclaimers and terms
@@ -32,6 +33,7 @@ import * as intro from './src/intro.mjs';
 import * as background from './src/background.mjs';
 import * as gamify from './src/gamify.mjs';
 import * as formats from './src/campaign-formats.mjs';
+import * as userFormats from './src/user-formats.mjs';
 import * as popularity from './src/popularity.mjs';
 import { mergeSyncedIntoStore } from './src/sync-target.mjs';
 
@@ -105,6 +107,7 @@ export function parseHash(hash = '') {
   if (view === 'rings') {
     return { view: 'rings', formatId: param ? decodeURIComponent(param) : null };
   }
+  if (view === 'campaigns' && param === 'new') return { view: 'campaigns-new' };
   if (view === 'campaigns') return { view: 'campaigns' };
   if (view === 'format' && param) {
     return { view: 'format', formatId: decodeURIComponent(param) };
@@ -123,7 +126,7 @@ export function parseHash(hash = '') {
  * land on Home; Terms lives under the Tools gear menu. Pure, tested.
  */
 export function navItemForView(view = '') {
-  if (view === 'discover' || view === 'campaigns' || view === 'format') return 'discover';
+  if (view === 'discover' || view === 'campaigns' || view === 'campaigns-new' || view === 'format') return 'discover';
   if (view === 'tools' || view === 'terms') return 'tools';
   return 'home';
 }
@@ -366,6 +369,17 @@ async function loadFormats() {
   return formatsCache;
 }
 
+/**
+ * loadMergedFormats() — seed formats + the user's own templates (V49).
+ * User templates live in localStorage, never in data/formats.json.
+ * Every route that looks a format up by id uses this, so a template
+ * you just made never shows "not found".
+ */
+async function loadMergedFormats() {
+  const seeds = await loadFormats();
+  return userFormats.mergeFormats(seeds, userFormats.loadUserFormats());
+}
+
 // Template usage, queried once per page load (V46). usageCache is the
 // V46 Map (id -> { rings: Set, assists: n }); usageNoteCache is the
 // honest-limits line shown with any count, or the couldn't-reach line
@@ -409,7 +423,7 @@ async function loadFormatUsage(formatIds) {
  * an error.
  */
 async function renderCampaigns(view) {
-  const formatsList = await loadFormats();
+  const formatsList = await loadMergedFormats();
   const statics = await loadStaticCampaigns();
   const merged = discovery.mergeLists(statics, store.campaigns);
   const mountIt = (usage) => {
@@ -421,6 +435,7 @@ async function renderCampaigns(view) {
       rings: merged,
       sortByUsage: usage || null,
       usageNote: usage ? usageNoteCache : null,
+      onNewTemplate: () => { window.location.hash = '#/campaigns/new'; },
       navigate: (campaign) => {
         gamify.record('discover', { campaignId: campaign.id });
         window.location.hash = `#/campaign/${encodeURIComponent(campaign.id)}`;
@@ -445,7 +460,7 @@ async function renderCampaigns(view) {
  * Unknown ids get a not-found message, not a crash.
  */
 async function renderFormat(view, formatId) {
-  const formatsList = await loadFormats();
+  const formatsList = await loadMergedFormats();
   const format = formatsList.find(
     (f) => String(f.id).toLowerCase() === String(formatId).toLowerCase(),
   );
@@ -486,11 +501,25 @@ async function renderFormat(view, formatId) {
  * loaded formats and handed to home.mount, which opens the create
  * view with the format preselected. Unknown ids are ignored.
  */
+/**
+ * renderNewTemplate(view) — the "New campaign template" form (V49):
+ * tagline + description + how-to, saved to localStorage by onCreate,
+ * then straight to the new template's page.
+ */
+function renderNewTemplate(view) {
+  view.textContent = '';
+  formats.mountCreate(view, {
+    onCreate: (f) => userFormats.addUserFormat(f),
+    onCreated: (f) => { window.location.hash = `#/format/${encodeURIComponent(f.id)}`; },
+    onCancel: () => { window.location.hash = '#/campaigns'; },
+  });
+}
+
 async function renderRings(view, formatId) {
   view.textContent = '';
   let format = null;
   if (formatId) {
-    const formatsList = await loadFormats();
+    const formatsList = await loadMergedFormats();
     format =
       formatsList.find((f) => String(f.id).toLowerCase() === String(formatId).toLowerCase()) ||
       null;
@@ -654,6 +683,9 @@ async function route() {
     case 'discover':
     case 'campaigns':
       await renderCampaigns(view);
+      break;
+    case 'campaigns-new':
+      renderNewTemplate(view);
       break;
     case 'rings':
       await renderRings(view, parsed.formatId);
