@@ -12,6 +12,7 @@
 
 import { createStore } from './src/store.mjs';
 import { decodeCampaignLink, markContributed } from './src/campaign.mjs';
+import * as nostr from './src/nostr.mjs';
 import * as home from './src/home.mjs';
 import * as campaignPage from './src/campaign-page.mjs';
 import * as quoteComposer from './src/quote-composer.mjs';
@@ -192,7 +193,36 @@ function renderNotFound(view, id) {
   view.innerHTML = `<section><h2>Campaign not found</h2><p>No campaign with id ${esc(id)} here — it may have been cleared with the demo data. <a href="#/">Back to home</a>.</p></section>`;
 }
 
-function renderCampaign(view, id) {
+/**
+ * renderSyncPanel(campaignId) — the Nostr sync panel (V44) in
+ * #campaign-extras, a sibling of #view (same pattern as renderHomeExtras:
+ * campaign-page.mjs re-renders by overwriting #view's innerHTML, which
+ * would wipe anything appended there). Mounted fresh on every campaign
+ * route; emptied on other routes by route(). onMerged saves the merged
+ * list and re-renders only the campaign page, so the panel keeps its
+ * "Synced. N updates merged." message.
+ */
+function renderSyncPanel(campaignId) {
+  const slot = document.querySelector('#campaign-extras');
+  if (!slot) return;
+  slot.textContent = '';
+  const campaign = store.campaigns.find((c) => c.id === campaignId);
+  if (!campaign) return;
+  const view = document.querySelector('#view');
+  nostr.mount(slot, {
+    campaign,
+    getCampaigns: () => store.campaigns,
+    me: store.me,
+    onMerged: (list) => {
+      store.saveCampaigns(list);
+      // Re-render the page only ({ sync: false }) so the panel keeps its
+      // "Synced. N updates merged." message.
+      if (view) renderCampaign(view, campaignId, { sync: false });
+    },
+  });
+}
+
+function renderCampaign(view, id, opts = {}) {
   return findCampaign(id).then((campaign) => {
     if (!campaign) {
       renderNotFound(view, id);
@@ -206,7 +236,25 @@ function renderCampaign(view, id) {
       onPassOn: ({ campaignId, postId }) => {
         gamify.record('passon', { campaignId, postId });
       },
+      // V43c seam: the page already removed the member locally and synced
+      // the store. Republish the updated membership to the relays (V43b)
+      // so every client honors the removal — the invite link stays stable
+      // (spec §17c). Best-effort: a failed republish never undoes the
+      // local removal; the sync panel can retry it.
+      onMemberRemoved: async ({ campaignId, handle }) => {
+        const list = store.campaigns;
+        const campaign = list.find((c) => c.id === campaignId);
+        if (!campaign) return;
+        try {
+          const { relays } = nostr.loadRelays(globalThis.localStorage);
+          const client = nostr.createRelayClient({ relays });
+          await nostr.publishRemoval(client, campaign, { by: store.me?.handle });
+        } catch {
+          // Local removal stands; relay republish retries from the panel.
+        }
+      },
     });
+    if (opts.sync !== false) renderSyncPanel(campaign.id);
     // Kindled hooks for the inline composers: one textarea per
     // unassisted X/Bluesky post slot. Each watches its own post's text
     // with a per-post draft id, so a kindle lands on the right post.
@@ -388,7 +436,39 @@ async function route() {
   const parsed = parseHash(window.location.hash);
   syncNav(parsed.view);
   renderHomeExtras(parsed.view);
+  // The sync panel slot is re-mounted by renderCampaign when applicable;
+  // clear it here so a stale panel never survives a route change.
+  const extras = document.querySelector('#campaign-extras');
+  if (extras) extras.textContent = '';
   if (parsed.view === 'link') {
+    // Short Nostr link first (#c=<naddr>[&k=<key>]): fetch the campaign
+    // from the relays (V44, spec §14). The key rides in the fragment only
+    // and is attached to the merged campaign — the relay never sees it.
+    // Relays: the user's configured list, else the relays embedded in the
+    // naddr, else the suggested defaults (used for this fetch only — the
+    // panel's opt-in list is not auto-configured).
+    const frag = nostr.parseCampaignLinkFragment(parsed.hash);
+    if (frag) {
+      const configured = nostr.loadRelays(globalThis.localStorage).relays;
+      const relays = configured.length
+        ? configured
+        : (frag.relays.length ? frag.relays : [...nostr.DEFAULT_RELAYS]);
+      const client = nostr.createRelayClient({ relays });
+      const merged = await nostr.syncCampaign(client, store.campaigns, frag.campaignId, frag.pubkey);
+      let campaign = merged.campaigns.find((c) => c.id === frag.campaignId);
+      if (!campaign) {
+        view.innerHTML = '<p class="form-error">Couldn\'t reach the relays to open this ring. Check your connection and try again — or ask a member for the full campaign link (it works offline).</p>';
+        const holder = document.createElement('div');
+        view.appendChild(holder);
+        home.mount(holder, { store, navigate });
+        return;
+      }
+      if (frag.key) campaign = { ...campaign, key: frag.key };
+      store.saveCampaigns(merged.campaigns.map((c) => (c.id === campaign.id ? campaign : c)));
+      window.history.replaceState(null, '', `#/campaign/${encodeURIComponent(campaign.id)}`);
+      await renderCampaign(view, campaign.id);
+      return;
+    }
     const { campaign, error } = decodeCampaignLink(parsed.hash);
     if (error || !campaign) {
       view.innerHTML = `<p class="form-error">That campaign link could not be opened: ${esc(error || 'unknown error')}</p>`;

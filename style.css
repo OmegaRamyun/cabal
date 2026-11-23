@@ -549,3 +549,22 @@ footer,
     scroll-behavior: auto !important;
   }
 }
+
+/* ---- Nostr sync panel (V44) ---- */
+/* Minimal: the panel is a card in the #campaign-extras slot; Pico owns
+   the controls. Ember/gold come from the existing tokens. */
+.nostr-panel {
+  border: 1px solid var(--pico-muted-border-color);
+  border-radius: var(--cabal-radius);
+  padding: 1rem;
+  margin-top: 1rem;
+}
+.nostr-panel h2 { margin-top: 0; }
+.nostr-panel .privacy { font-style: italic; }
+.nostr-panel .relay-ok { color: var(--cabal-posted); }
+.nostr-panel .relay-down { color: var(--cabal-danger); }
+.nostr-panel .relay-wait,
+.nostr-panel .relay-idle,
+.nostr-panel .relay-none { color: var(--pico-muted-color); }
+.nostr-panel .warn { color: var(--cabal-danger); }
+.nostr-panel .muted { color: var(--pico-muted-color); }

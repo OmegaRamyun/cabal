@@ -12,6 +12,7 @@
 // In tests, call the exported pure helpers with plain objects.
 
 import * as campaignModel from './campaign.mjs';
+import { generateCampaignKey } from './nostr.mjs';
 
 export const STORE_KEYS = {
   game: 'cabal.v2.game',
@@ -520,12 +521,18 @@ export function mount(rootEl, ctx) {
             };
       let campaign;
       try {
+        // V44: the campaign is born with its shared write key (V43b). The
+        // key belongs to the CAMPAIGN, never the user — the app holds it
+        // invisibly, the invite link carries it, no key management for
+        // the user. Demo/example rings (seeded elsewhere) have no key and
+        // are read-only on Nostr.
         campaign = createCampaign({
           game: store.game,
           title,
           anchorPost,
           window: null,
           creator,
+          key: generateCampaignKey().key,
         });
       } catch (err) {
         errEl.textContent = err.message;

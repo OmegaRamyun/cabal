@@ -16,6 +16,7 @@
 import * as campaignModel from './campaign.mjs';
 import { ringSummary, resolveStore } from './home.mjs';
 import * as quoteComposer from './quote-composer.mjs';
+import * as nostrModel from './nostr.mjs';
 
 export const { addMember, postedCount } = campaignModel;
 export { ringSummary };
@@ -178,6 +179,31 @@ export function hasQuotablePost(campaign) {
     return newestQuotablePost(campaign) !== null;
   }
   return (campaign.members || []).some((m) => m.status === 'posted' && m.quoteUrl);
+}
+
+/**
+ * shareLinkFor(campaign, baseUrl, relays = []) -> { url, note, noteClass }.
+ * V44 (spec §14): once the ring has been published to relays
+ * (campaign.nostr.createdAt set) AND the app holds its campaign key, the
+ * share link is the short Nostr pointer (#c=<naddr>[&k=<key>]) — the invite
+ * link stays stable and short. Before the first publish, the share link is
+ * the whole-payload link (encodeCampaignLink): it also works offline, and
+ * it is the fallback when relays are unreachable. Never throws — any
+ * failure falls back to the payload link. Pure; tested.
+ */
+export function shareLinkFor(campaign, baseUrl = '', relays = []) {
+  const payload = encodeCampaignLink(campaign, baseUrl);
+  let url = payload.url;
+  let note = payload.long ? 'This link is long — some chat apps may trim it.' : '';
+  let noteClass = 'form-error';
+  try {
+    if (campaign?.nostr?.createdAt && nostrModel.hasCampaignKey(campaign)) {
+      url = baseUrl + nostrModel.campaignLinkFragment(campaign, relays);
+      note = 'Short link — opens the ring from the relays.';
+      noteClass = 'muted';
+    }
+  } catch { /* keep the payload link */ }
+  return { url, note, noteClass };
 }
 
 /**
@@ -480,7 +506,7 @@ export function mount(rootEl, ctx) {
     const quotable = newestQuotablePost(campaign);
     const baseUrl =
       typeof window !== 'undefined' ? window.location.href.split('#')[0] : '';
-    const share = encodeCampaignLink(campaign, baseUrl);
+    const share = shareLinkFor(campaign, baseUrl, nostrModel.loadRelays().relays);
 
     const links = game.links || {};
     const gameLinks = [
@@ -622,7 +648,7 @@ export function mount(rootEl, ctx) {
           <h3>Share this campaign</h3>
           <p>Anyone with this link opens the app straight into this campaign and can join. The link is the invite.</p>
           <p><input type="text" readonly value="${esc(share.url)}" id="campaign-share-link" aria-label="Campaign link"> <button type="button" id="campaign-share-copy">Copy link</button></p>
-          ${share.long ? '<p class="form-error">This link is long — some chat apps may trim it.</p>' : ''}
+          ${share.note ? `<p class="${esc(share.noteClass)}">${esc(share.note)}</p>` : ''}
         </section>
 
         <p><button type="button" id="back-home">Back to home</button></p>
