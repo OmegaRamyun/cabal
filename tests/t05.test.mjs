@@ -54,9 +54,12 @@ const base = seeds[0];
 const withP = (o) => ({ ...base, ...o });
 
 test("identical profiles score 1.0 everywhere", () => {
-  const s = matchScore(base, base);
+  const p = withP({ launch_window: { type: "live", start: "2026-03-01", end: "2026-03-30" } }); // 30 days
+  const s = matchScore(p, p);
   assert.deepEqual(s.components, { genre_tag: 1, audience: 1, window: 1 });
   assert.equal(s.total, 1);
+  // spec: window = overlapping days / 30, so a 28-day window vs itself is 28/30
+  assert.equal(matchScore(base, base).components.window, 0.933);
   assert.equal(s.multiplier, 1.0);
 });
 
