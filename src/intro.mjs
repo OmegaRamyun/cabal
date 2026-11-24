@@ -1,64 +1,74 @@
-// V33 — Intro pages: what Cabal is, how a campaign works, the theory.
-// Pure data + helpers; mount() renders one page with textContent/classNames
-// only. No network, no storage writes. Theme lives in style.css (coordinator).
+// V33 / V65 — Intro onboarding card + reference docs (how rings work, theory).
+// V65: Intro-as-onboarding is replaced by ONE <=60-word 3-step card with a
+// "Start my ring" button. Theory (FTC, relays, Kickstarter stats) is reference
+// material for Tools/Docs, kept reachable via getIntroPage("theory") and
+// #/intro/theory (or #/tools/theory), never in the onboarding path.
+// Pure data + helpers; mount() renders with textContent/classNames only.
+// No network, no storage writes. Theme lives in style.css (coordinator).
+
+export const ONBOARDING_CARD = Object.freeze({
+  id: "intro",
+  route: "#/intro",
+  title: "How rings work",
+  lede: "Small rings of indie devs boost each other's posts in their own words — no accounts, no auto-posting.",
+  steps: "1. Start or join a ring → 2. Drop your post link → 3. Boost in your own words",
+  ctaLabel: "Start my ring",
+  ctaHref: "#/rings",
+});
+
+export const THEORY_DOCS_ROUTE = "#/tools/theory";
+
+export const ONBOARDING_PAGE_IDS = Object.freeze(["intro"]);
+export const REFERENCE_PAGE_IDS = Object.freeze(["how", "theory"]);
+
+export function countWords(text) {
+  return String(text ?? "")
+    .replace(/[—–→]/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+}
+
+export function onboardingCardWordCount() {
+  return countWords(
+    [
+      ONBOARDING_CARD.title,
+      ONBOARDING_CARD.lede,
+      ONBOARDING_CARD.steps,
+      ONBOARDING_CARD.ctaLabel,
+    ].join(" "),
+  );
+}
+
+export function isReferencePage(id) {
+  return REFERENCE_PAGE_IDS.includes(id);
+}
 
 export const INTRO_PAGES = [
   {
     id: "intro",
     route: "#/intro",
-    title: "What Cabal is",
-    lede: "A small, quiet pact between developers. You light your game. Others carry the flame, and keep carrying it.",
+    title: ONBOARDING_CARD.title,
+    lede: ONBOARDING_CARD.lede,
+    onboarding: true,
     sections: [
       {
-        heading: "A ring that keeps going",
-        paragraphs: [
-          "Cabal is mutual aid for indie developers. You gather a ring of other devs, and as each of you makes news, the ring amplifies it. Not once: again and again, as everyone's game moves forward. Each person does it in their own voice.",
-          "The founding post is the start of a ring, not the whole campaign. Posts keep arriving, and the ring keeps assisting them.",
-        ],
-      },
-      {
-        heading: "Your game stands at the center",
-        paragraphs: [
-          "No game, no ring. A ring is always about a game you made, and what gets amplified is always a ringmate's own post about their work. It is never a target, never a person, never a pile-on.",
-        ],
-      },
-      {
-        heading: "The link is the invite",
-        paragraphs: [
-          "A ring can be shared as a link. Whoever holds the link can open it and join. Keep it in a DM and the ring stays closed. Drop it where devs gather and the ring can grow. There is no approval queue and no gatekeeper.",
-          "The campaign page shows the ring as a feed: who is in, the posts they have added, and the receipts of who assisted each one.",
-        ],
-      },
-      {
-        heading: "No accounts, no password",
-        paragraphs: [
-          "You are anonymous. There are no accounts. Your game and your campaigns live in your own browser. Cabal never posts for you, and it never holds a password or a platform token.",
-        ],
-      },
-      {
-        heading: "Rings and Campaigns",
-        paragraphs: [
-          "Three clear pieces. Your Rings are your dev groups who boost each other over time. Templates are reusable post formats any ring can pick up and run in its own words. The Network is the live map of rings and templates.",
-        ],
-      },
-      {
-        heading: "What it does today, plainly",
-        paragraphs: [
-          "Today Cabal helps you start a ring, add posts from any platform, assist a ringmate's post, and leave a receipt of what you did. How a ring stays current across people is covered on the theory page, including what is public and what is not.",
-        ],
+        heading: "Three steps",
+        paragraphs: [ONBOARDING_CARD.steps],
       },
     ],
   },
   {
     id: "how",
     route: "#/intro/how",
-    title: "How a campaign works",
+    title: "How rings work",
     lede: "A rhythm, not a deadline. None of it posts on your behalf.",
+    referenceOnly: true,
     sections: [
       {
         heading: "1. Start or join a ring",
         paragraphs: [
-          "Tell Cabal about your game: its name and its store page. Start a ring around it, or open a ring's link and join with one tap. No sign-up.",
+          "Tell Cabal about your game: its name, its tags, and its store page. Start a ring around it, or open a ring's link and join with one tap. No sign-up.",
         ],
       },
       {
@@ -90,7 +100,7 @@ export const INTRO_PAGES = [
       {
         heading: "Finding other rings",
         paragraphs: [
-          "A ring can appear in discovery if it attaches a real game page and has at least two developers in it. The ring is the proof. A ring with no real members stays invisible.",
+          "A ring can appear in discovery if it attaches a real game page and has at least two developers in it. Tags help similar games find each other. The ring is the proof. A ring with no real members stays invisible.",
         ],
       },
     ],
@@ -98,8 +108,10 @@ export const INTRO_PAGES = [
   {
     id: "theory",
     route: "#/intro/theory",
+    docsRoute: THEORY_DOCS_ROUTE,
     title: "The theory",
-    lede: "Same campaign, different post. Over and over.",
+    lede: "Same ring, different post. Over and over.",
+    referenceOnly: true,
     sections: [
       {
         heading: "Sustained mutual aid: the ring compounds",
@@ -110,7 +122,7 @@ export const INTRO_PAGES = [
       {
         heading: "Same campaign, different post",
         paragraphs: [
-          "The campaign is the ring and the game at its center. The posts are what the ring assists, one at a time. Every assist is per post: a ringmate helping with one post has not helped with the next, and nobody has to pretend they did.",
+          "The ring and the game at its center stay. The posts are what the ring assists, one at a time. Every assist is per post: a ringmate helping with one post has not helped with the next, and nobody has to pretend they did.",
         ],
       },
       {
@@ -166,7 +178,7 @@ export const INTRO_PAGES = [
         heading: "How the ring stays in sync, and what is public",
         paragraphs: [
           "A ring syncs through public relays: open servers that hold the ring's posts and receipts so every member's copy can catch up. A link is the offline fallback. It carries a snapshot of the ring for someone with no relay access, and it can add a ring you do not have yet.",
-          "The privacy reality, plainly: anything on a public relay is public. Campaign content is public by design, and discovery is public anyway. Never put anything private in a post or a receipt. A relay post cannot be reliably deleted, so do not treat it as private, direct, or taken back.",
+          "The privacy reality, plainly: anything on a public relay is public. Ring content is public by design, and discovery is public anyway. Never put anything private in a post or a receipt. A relay post cannot be reliably deleted, so do not treat it as private, direct, or taken back.",
         ],
       },
       {
@@ -187,10 +199,11 @@ export function getIntroPage(id) {
   return INTRO_PAGES.find((p) => p.id === id) || null;
 }
 
-// Map a hash route ("#/intro", "#/intro/how") to a page id, or null.
-// Trailing slashes are normalized ("#/intro/" is "#/intro").
+// Map a hash route ("#/intro", "#/intro/how", "#/intro/theory",
+// "#/tools/theory") to a page id, or null. Trailing slashes are normalized.
 export function introPageIdForRoute(route) {
   const normalized = String(route ?? "").replace(/\/+$/, "");
+  if (normalized === THEORY_DOCS_ROUTE) return "theory";
   const hit = INTRO_PAGES.find((p) => p.route === normalized);
   return hit ? hit.id : null;
 }
@@ -204,12 +217,44 @@ function el(doc, tag, text, cls) {
 }
 
 /**
- * mount(rootEl, pageId) — renders one intro page. Unknown ids fall back to
- * the first page. textContent only; no storage, no network.
+ * mountOnboardingCard(rootEl, ctx?) — renders the single <=60-word 3-step
+ * onboarding card with a "Start my ring" action. No Theory links in the
+ * onboarding path.
  */
-export function mount(rootEl, pageId) {
+export function mountOnboardingCard(rootEl, ctx = {}) {
   const doc = rootEl.ownerDocument;
+  rootEl.textContent = "";
+  const card = el(doc, "article", null, "cabal-intro intro-card intro-intro");
+  card.appendChild(el(doc, "h2", ONBOARDING_CARD.title, "intro-title"));
+  card.appendChild(el(doc, "p", ONBOARDING_CARD.lede, "intro-lede"));
+  card.appendChild(el(doc, "p", ONBOARDING_CARD.steps, "intro-steps"));
+
+  const actions = el(doc, "div", null, "intro-actions");
+  const cta = el(doc, "a", ONBOARDING_CARD.ctaLabel, "primary btn-md intro-cta");
+  cta.setAttribute("href", typeof ctx.startHref === "string" ? ctx.startHref : ONBOARDING_CARD.ctaHref);
+  if (typeof ctx.onStartRing === "function" && typeof cta.addEventListener === "function") {
+    cta.addEventListener("click", (ev) => {
+      if (ev && typeof ev.preventDefault === "function") ev.preventDefault();
+      ctx.onStartRing();
+    });
+  }
+  actions.appendChild(cta);
+  card.appendChild(actions);
+  rootEl.appendChild(card);
+}
+
+/**
+ * mount(rootEl, pageId, ctx?) — renders the onboarding 3-step card for
+ * "intro" (or unknown ids), or a reference page ("how", "theory") for
+ * Tools/Docs. textContent only; no storage, no network.
+ */
+export function mount(rootEl, pageId, ctx = {}) {
   const page = getIntroPage(pageId) || INTRO_PAGES[0];
+  if (page.id === "intro") {
+    mountOnboardingCard(rootEl, ctx);
+    return;
+  }
+  const doc = rootEl.ownerDocument;
   rootEl.textContent = "";
   const article = el(doc, "article", null, `cabal-intro intro-${page.id}`);
   article.appendChild(el(doc, "h2", page.title, "intro-title"));
@@ -221,14 +266,5 @@ export function mount(rootEl, pageId) {
     for (const p of s.paragraphs) sec.appendChild(el(doc, "p", p, "intro-text"));
     article.appendChild(sec);
   }
-  const nav = el(doc, "nav", null, "intro-nav");
-  nav.setAttribute("aria-label", "Intro pages");
-  for (const p of INTRO_PAGES) {
-    const a = el(doc, "a", p.title, p.id === page.id ? "intro-link intro-current" : "intro-link");
-    a.setAttribute("href", p.route);
-    if (p.id === page.id) a.setAttribute("aria-current", "page");
-    nav.appendChild(a);
-  }
-  article.appendChild(nav);
   rootEl.appendChild(article);
 }

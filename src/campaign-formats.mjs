@@ -60,6 +60,7 @@ export function normalizeFormat(f) {
     tagline: typeof src.tagline === "string" ? src.tagline.trim() : "",
     description: typeof src.description === "string" ? src.description : "",
     howTo: typeof src.howTo === "string" ? src.howTo : "",
+    ...(isNonEmptyString(src.disclosure) ? { disclosure: src.disclosure.trim() } : {}),
     examples,
     tags: [...new Set(tags)],
     ...(src.demo === true ? { demo: true } : {}),
@@ -579,6 +580,10 @@ export function mount(rootEl, ctx = {}) {
 
   page.appendChild(el(doc, "h3", "How to run it", "section-eyebrow"));
   page.appendChild(el(doc, "p", f.howTo || "No guidance yet.", "format-howto"));
+  if (f.disclosure) {
+    page.appendChild(el(doc, "h3", "Disclosure reminder", "section-eyebrow"));
+    page.appendChild(el(doc, "p", f.disclosure, "format-disclosure"));
+  }
 
   page.appendChild(el(doc, "h3", "Example uses", "section-eyebrow"));
   const exList = el(doc, "ul", null, "format-examples");
@@ -630,15 +635,55 @@ export function mount(rootEl, ctx = {}) {
   rootEl.appendChild(page);
 }
 
-// ---- V49: create a template (pure core + mount) ----
+// ---- V49 / V68 / V69: create a post format (pure core + mount) ----
+
+export const DEFAULT_DISCLOSURE_REMINDER =
+  "Mention you're posting with your dev ring.";
+
+export const MIN_DEVS_FOR_FORMAT = 2;
 
 export const CREATE_TEMPLATE_COPY = {
-  heading: "New campaign template",
-  lede:
-    "A reusable post shape with disclosure guidance — any ring on the Network can pick it up in their own words.",
-  submit: "Save template",
+  heading: "New post format",
+  lede: "A reusable idea any ring can try in their own words.",
+  submit: "Save post format",
   cancel: "Cancel",
+  lockedMessage:
+    "Post formats unlock once your ring has at least 2 devs. Start a ring and invite a ringmate first.",
+  lockedCta: "Go to my rings",
 };
+
+function activeMemberCount(ring) {
+  if (!isObj(ring) || !Array.isArray(ring.members)) return 0;
+  const removed = new Set(
+    (Array.isArray(ring.removedMembers) ? ring.removedMembers : [])
+      .map((r) => handleKey(r?.handle))
+      .filter(Boolean),
+  );
+  const seen = new Set();
+  for (const m of ring.members) {
+    const k = handleKey(m?.handle);
+    if (!k || removed.has(k)) continue;
+    seen.add(k);
+  }
+  return seen.size;
+}
+
+/**
+ * canCreateFormat(rings, me?) -> boolean
+ * V69: Creating a post format is hidden until the user has at least one
+ * real (non-demo) ring with 2+ active devs. When `me` is provided, only
+ * rings where `me` is an active member count.
+ */
+export function canCreateFormat(rings, me) {
+  const list = Array.isArray(rings) ? rings : [];
+  const hasMe = isObj(me) && Boolean(handleKey(me.handle));
+  for (const r of list) {
+    if (!isObj(r) || r.demo === true) continue;
+    if (hasMe && !isRingMember(r, me)) continue;
+    if (activeMemberCount(r) >= MIN_DEVS_FOR_FORMAT) return true;
+  }
+  return false;
+}
 
 /** "a, B, a" -> ["a","b"]. Trimmed, lowercased, deduped, empties dropped. */
 export function parseFormatTags(text) {
@@ -646,24 +691,25 @@ export function parseFormatTags(text) {
   return [...new Set(parts.map((t) => lc(t)).filter(Boolean))];
 }
 
-const DISCLOSURE_RE = /disclos/i;
-
 /**
  * Validates the create-form values and builds the format.
  * Returns { ok:true, format } or { ok:false, errors:{ field: message } }.
- * Required: tagline, description, howTo (final check is the shared
- * createFormat/validateFormat, not re-implemented) plus a disclosure
- * mention in howTo (every template ships a disclosure line). Tags optional.
+ * Required: tagline, description, howTo, and disclosure (prefilled with
+ * DEFAULT_DISCLOSURE_REMINDER when omitted; editable, no regex gate).
+ * Tags optional.
  */
 export function buildFormatFromForm(values = {}) {
   const v = isObj(values) ? values : {};
   const errors = {};
-  if (!isNonEmptyString(v.tagline)) errors.tagline = "Give the template a short name.";
-  if (!isNonEmptyString(v.description)) errors.description = "Say in a sentence or two what this template is.";
+  if (!isNonEmptyString(v.tagline)) errors.tagline = "Give the post format a short name.";
+  if (!isNonEmptyString(v.description)) errors.description = "Say in a sentence or two what this post format is.";
   if (!isNonEmptyString(v.howTo)) {
-    errors.howTo = "Explain the structure and how ringmates disclose.";
-  } else if (!DISCLOSURE_RE.test(v.howTo)) {
-    errors.howTo = "Add a disclosure line (say how ringmates disclose they are in a ring).";
+    errors.howTo = "Explain how a ring runs this post format.";
+  }
+  const disclosure =
+    v.disclosure === undefined ? DEFAULT_DISCLOSURE_REMINDER : String(v.disclosure ?? "").trim();
+  if (!disclosure) {
+    errors.disclosure = "Add a short disclosure reminder (e.g. Mention you're posting with your dev ring.).";
   }
   if (Object.keys(errors).length) return { ok: false, errors };
   try {
@@ -671,6 +717,7 @@ export function buildFormatFromForm(values = {}) {
       tagline: v.tagline.trim(),
       description: v.description.trim(),
       howTo: v.howTo.trim(),
+      disclosure,
       tags: parseFormatTags(v.tags),
       examples: [],
     });
@@ -681,8 +728,10 @@ export function buildFormatFromForm(values = {}) {
 }
 
 /**
- * mountCreate(rootEl, ctx) — the "New campaign template" form.
- * ctx: { onCreate(format), onCreated(format), onCancel() }
+ * mountCreate(rootEl, ctx) — the "New post format" form (V49 / V68 / V69).
+ * ctx: { onCreate(format), onCreated(format), onCancel(), rings?, store?, me? }
+ * When `ctx.rings` or `ctx.store` is provided, creation is gated on
+ * `canCreateFormat(rings, me)` (2+ active devs in a real ring).
  * No storage here: the caller saves inside onCreate. onCreated runs only
  * after onCreate returned without throwing.
  */
@@ -690,6 +739,37 @@ export function mountCreate(rootEl, ctx = {}) {
   const doc = rootEl.ownerDocument;
   rootEl.textContent = "";
   const C = CREATE_TEMPLATE_COPY;
+
+  if (ctx.rings !== undefined || ctx.store !== undefined) {
+    const rings = Array.isArray(ctx.rings)
+      ? ctx.rings
+      : typeof ctx.store?.loadCampaigns === "function"
+        ? ctx.store.loadCampaigns()
+        : Array.isArray(ctx.store?.campaigns)
+          ? ctx.store.campaigns
+          : [];
+    const me =
+      ctx.me !== undefined
+        ? ctx.me
+        : typeof ctx.store?.loadMe === "function"
+          ? ctx.store.loadMe()
+          : ctx.store?.me;
+    if (!canCreateFormat(rings, me)) {
+      const locked = el(doc, "section", null, "cabal-form-page format-create-locked");
+      const header = el(doc, "header", null, "cabal-page-header");
+      const headerMain = el(doc, "div", null, "cabal-page-header-main");
+      headerMain.appendChild(el(doc, "h2", C.heading));
+      headerMain.appendChild(el(doc, "p", C.lockedMessage, "view-lede"));
+      header.appendChild(headerMain);
+      locked.appendChild(header);
+      const back = el(doc, "a", C.lockedCta, "primary btn-md");
+      back.href = "#/rings";
+      locked.appendChild(back);
+      rootEl.appendChild(locked);
+      return;
+    }
+  }
+
   const page = el(doc, "section", null, "cabal-form-page");
   const header = el(doc, "header", null, "cabal-page-header");
   const headerMain = el(doc, "div", null, "cabal-page-header-main");
@@ -726,13 +806,17 @@ export function mountCreate(rootEl, ctx = {}) {
     fieldErr[name] = fe;
   };
   const topRow = el(doc, "div", null, "cabal-form-row");
-  field("tagline", "Template name", "text", null, "e.g. Weekly devlog, one clip", topRow);
+  field("tagline", "Post format name", "text", null, "e.g. Weekly devlog, one clip", topRow);
   field("tags", "Tags (optional)", "text", null, "devlog, clips", topRow);
   form.appendChild(topRow);
   field("description", "What is it?", "short", "One or two sentences.", "e.g. Each ringmate shares one short clip of their game from the week.");
   field("howTo", "How a ring runs it", "long",
-    "Structure and disclosure only — no ready-to-paste captions.",
-    "e.g. Post one clip, say what changed this week, and add a disclosure line that you are in a ring.");
+    "Structure only — no ready-to-paste captions.",
+    "e.g. Post one clip and say what changed this week in your own words.");
+  field("disclosure", "Disclosure reminder", "text",
+    "Ships with every post format so ringmates remember to note their ring.",
+    DEFAULT_DISCLOSURE_REMINDER);
+  inputs.disclosure.value = DEFAULT_DISCLOSURE_REMINDER;
 
   const footer = el(doc, "div", null, "cabal-form-footer");
   const submit = el(doc, "button", C.submit, "primary btn-md");
@@ -754,6 +838,7 @@ export function mountCreate(rootEl, ctx = {}) {
       tagline: inputs.tagline.value,
       description: inputs.description.value,
       howTo: inputs.howTo.value,
+      disclosure: inputs.disclosure.value,
       tags: inputs.tags.value,
     });
     if (!result.ok) {

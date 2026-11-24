@@ -8,6 +8,8 @@
 // unified topbar icons/labels, and compact demo banner without editing
 // index.html. Pure routing/wayfinding helpers are exported for unit tests.
 
+import { getIntroPage } from './intro.mjs';
+
 export const LUCIDE_ATTRIBUTION =
   'Icons adapted from Lucide (https://lucide.dev), ISC License.';
 
@@ -117,14 +119,17 @@ export function backTargetForRoute(parsed, opts = {}) {
     return {
       href: '#/campaigns',
       label: 'Network',
-      title: 'New campaign template',
+      title: 'New post format',
     };
   }
   if (view === 'intro') {
+    const pageId = parsed?.pageId || 'intro';
+    const page = getIntroPage(pageId);
+    const isTheory = pageId === 'theory';
     return {
-      href: '#/',
-      label: 'Home',
-      title: String(opts?.title || 'What Cabal is'),
+      href: isTheory ? '#/tools' : '#/',
+      label: isTheory ? 'Tools' : 'Home',
+      title: String(opts?.title || page?.title || 'How rings work'),
     };
   }
   if (view === 'terms') {
@@ -210,7 +215,7 @@ function compactDemoBanner(doc) {
     const link = doc.createElement('a');
     link.href = '#/intro';
     link.className = 'demo-primer-link';
-    link.textContent = 'How it works';
+    link.textContent = 'How rings work';
     const firstBtn = buttons.find((b) => !b.hidden);
     if (firstBtn) banner.insertBefore(link, firstBtn);
     else banner.appendChild(link);

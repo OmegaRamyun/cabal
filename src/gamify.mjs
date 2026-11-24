@@ -155,7 +155,57 @@ export function createJournal(initial = {}) {
     passedOn: cleanSet(s.passedOn),
     kindled,
     title: TITLE_IDS.has(s.title) ? s.title : DEFAULT_TITLE,
+    firstAssist: s.firstAssist === true,
   };
+}
+
+/**
+ * V66: Mark that the user has completed their first assist (first
+ * Enscryption / contributed post). Boolean, private to this browser;
+ * gates whether the Field Journal renders on first-run / ringless screens.
+ */
+export function markFirstAssist(journal) {
+  const j = createJournal(journal);
+  j.firstAssist = true;
+  return j;
+}
+
+function normalizeHandle(h) {
+  return String(h ?? "").trim().replace(/^@+/, "").toLowerCase();
+}
+
+function ringsHaveAssistBy(campaigns, me) {
+  if (!Array.isArray(campaigns) || campaigns.length === 0) return false;
+  const who = normalizeHandle(typeof me === "string" ? me : me?.handle);
+  if (!who) return false;
+  for (const c of campaigns) {
+    if (!c || c.demo === true) continue;
+    const posts = Array.isArray(c.posts) ? c.posts : [];
+    for (const post of posts) {
+      const assists = Array.isArray(post?.assists) ? post.assists : [];
+      if (assists.some((a) => a && normalizeHandle(a.handle) === who)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * shouldShowJournal(journal, ctx?) -> boolean
+ * V66: Hidden on first-run / ringless screens until the user's first assist
+ * (first Enscryption / contributed post). Pass `{ forceShow: true }` only
+ * when the user explicitly opens the Journal from Tools.
+ */
+export function shouldShowJournal(journal, ctx = {}) {
+  if (ctx && ctx.forceShow === true) return true;
+  const j = createJournal(journal);
+  if (j.firstAssist === true) return true;
+  if (ctx && ctx.hasFirstAssist === true) return true;
+  if (ctx && Array.isArray(ctx.campaigns) && ringsHaveAssistBy(ctx.campaigns, ctx.me)) {
+    return true;
+  }
+  return false;
 }
 
 export function markPageRead(journal, pageId) {
@@ -372,6 +422,7 @@ export function record(kind, payload = {}, storage) {
       payload.postId
     );
   } else if (kind === "passon") j = markPassedOn(j, payload.campaignId, payload.postId);
+  else if (kind === "assist") j = markFirstAssist(j);
   else if (kind === "revise") {
     const r = kindleDraft(j, payload.draftId, payload);
     j = r.journal;
@@ -402,6 +453,11 @@ export function mount(rootEl, ctx = {}) {
 
   const render = () => {
     rootEl.textContent = "";
+    if (!shouldShowJournal(journal, ctx)) {
+      rootEl.hidden = true;
+      return;
+    }
+    rootEl.hidden = false;
     const prog = computeProgress(journal, { pageIds, firstPostIds: ctx.firstPostIds });
     const section = el(doc, "section", null, "cabal-journal");
     section.appendChild(el(doc, "h2", "Field journal", "journal-title"));
