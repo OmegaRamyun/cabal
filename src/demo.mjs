@@ -1,4 +1,6 @@
-// V25 — Demo mode: fictional example data, on by default on first load.
+// V25 — Demo mode: fictional example data. V61: opt-in only (optInDemo);
+// seedDemo remains as the low-level seeder but the shell must not call it
+// on cold load.
 // All demo content is invented. No real games, no real people, no real handles.
 // Store keys match V21 (cabal.v2.*). Reads/writes localStorage directly with
 // try/catch; V21's store module replaces these reads at integration.
@@ -228,6 +230,29 @@ export function demoBadge(campaign) {
 export function seedDemo(store, now) {
   const s = storage(store);
   if (read(s, "cabal.v2.demo") != null) return false;
+  write(s, "cabal.v2.game", JSON.stringify(demoGame()));
+  write(s, "cabal.v2.campaigns", JSON.stringify(demoCampaigns(now)));
+  write(s, "cabal.v2.demo", "on");
+  return true;
+}
+
+/**
+ * optInDemo(store?, now?) — V61: the ONLY path the shell uses to load demo
+ * data. Called when the user taps "See a demo ring" on the first-run screen;
+ * never on cold load. Unlike seedDemo it also works after a previous
+ * "Clear demo data" (flag 'off'), and it refuses to overwrite real rings:
+ * returns false if the demo is already on or any non-demo campaign exists.
+ */
+export function optInDemo(store, now) {
+  const s = storage(store);
+  if (read(s, "cabal.v2.demo") === "on") return false;
+  try {
+    const raw = read(s, "cabal.v2.campaigns");
+    const list = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(list) && list.some((c) => c && !c.demo)) return false;
+  } catch {
+    return false; // corrupt campaigns JSON: never overwrite
+  }
   write(s, "cabal.v2.game", JSON.stringify(demoGame()));
   write(s, "cabal.v2.campaigns", JSON.stringify(demoCampaigns(now)));
   write(s, "cabal.v2.demo", "on");
