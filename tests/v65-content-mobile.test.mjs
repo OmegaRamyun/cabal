@@ -281,7 +281,7 @@ describe("V68(b) — Prefilled editable Disclosure reminder replaces /disclos/i 
     const detailRoot = freshRoot();
     mountFormat(detailRoot, { format: created, rings: [] });
     assert.ok(detailRoot.textContent.includes(created.disclosure));
-    assert.ok(detailRoot.textContent.includes("screenshots · cozy"));
+    assert.ok(detailRoot.textContent.includes("screenshots, cozy"));
   });
 });
 

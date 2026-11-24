@@ -38,7 +38,7 @@ test("sticky CTA: shown while ringless (incl. demo), hidden with a real ring", (
 test("copy is verbatim", () => {
   assert.equal(
     FIRST_RUN_COPY.sentence,
-    "Cabal — small rings of indie devs boost each other’s posts, in their own words. No accounts.",
+    "Cabal: small rings of indie devs boost each other’s posts, in their own words. No accounts.",
   );
   assert.equal(FIRST_RUN_COPY.startRing, "Start a ring");
   assert.equal(FIRST_RUN_COPY.haveInvite, "I have an invite link");
