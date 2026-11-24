@@ -179,7 +179,7 @@ export function mount(rootEl) {
   const templates = getTemplates();
   let selectedId = templates[0]?.id ?? null;
 
-  rootEl.innerHTML = '';
+  rootEl.replaceChildren();
 
   const container = document.createElement('section');
   container.className = 'cabal-templates';
@@ -227,7 +227,7 @@ export function mount(rootEl) {
   }
 
   function render() {
-    picker.innerHTML = '';
+    picker.replaceChildren();
     for (const tpl of templates) {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -244,7 +244,7 @@ export function mount(rootEl) {
       picker.appendChild(btn);
     }
 
-    detail.innerHTML = '';
+    detail.replaceChildren();
     const active = getTemplateById(selectedId);
     if (!active) {
       return;
