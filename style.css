@@ -3565,3 +3565,42 @@ body.has-ringless-cta {
 .create-optional-details {
   margin: 0.5rem 0;
 }
+
+/* ---- V64 invite landing ---- */
+.invite-landing {
+  max-width: 32rem;
+  margin: 0 auto;
+  padding: 2rem 1.25rem;
+}
+
+.invite-title {
+  margin: 0.25rem 0 0.5rem;
+}
+
+.invite-game {
+  color: var(--cabal-muted);
+  margin: 0 0 1rem;
+}
+
+.invite-faces {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.invite-members {
+  color: var(--cabal-muted);
+  font-size: 0.9rem;
+  margin: 0 0 1rem;
+}
+
+.invite-more {
+  align-self: center;
+  color: var(--cabal-muted);
+  font-size: 0.9rem;
+}
+
+.invite-error {
+  color: #e07856;
+}

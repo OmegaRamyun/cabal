@@ -998,7 +998,7 @@ export function mount(rootEl, ctx) {
                 : iAmRemoved
                 ? ''
                 : `<h3 class="section-eyebrow">Join this ring</h3>
-            <p class="view-lede">Local only — anyone with the invite link can join.</p>
+            <p class="view-lede">No account needed. Add your name and handle to join this ring.</p>
             <form id="ring-join-form" class="cabal-form">
               <p class="form-error" id="join-errors" hidden></p>
               <div class="cabal-form-row">

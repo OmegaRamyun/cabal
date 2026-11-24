@@ -20,6 +20,7 @@ import { createStore } from './src/store.mjs';
 import { decodeCampaignLink, markContributed } from './src/campaign.mjs';
 import * as nostr from './src/nostr.mjs';
 import * as firstRun from './src/first-run.mjs';
+import * as inviteLanding from './src/invite-landing.mjs';
 import * as home from './src/home.mjs';
 import * as campaignPage from './src/campaign-page.mjs';
 import * as quoteComposer from './src/quote-composer.mjs';
@@ -251,7 +252,15 @@ function esc(s) {
 }
 
 function renderNotFound(view, id) {
-  view.innerHTML = `<section><h2>Campaign not found</h2><p>No campaign with id ${esc(id)} here — it may have been cleared with the demo data. <a href="#/">Back to home</a>.</p></section>`;
+  // V64: the not-found page IS the invite landing's dead-link card —
+  // friendly copy, never a raw id. (Its heading is "Ring not found",
+  // which also completes the V65 Ring copy standardization.)
+  inviteLanding.mount(view, { campaign: null });
+}
+
+/** Clear the demo banner (V64: invite loads never show it). */
+function hideDemoBanner() {
+  document.querySelector('#demo-banner')?.replaceChildren();
 }
 
 /**
@@ -301,7 +310,31 @@ function renderSyncPanel(campaign) {
 function renderCampaign(view, id, opts = {}) {
   return findCampaign(id).then(async (campaign) => {
     if (!campaign) {
+      hideDemoBanner();
       renderNotFound(view, id);
+      return;
+    }
+    // V64: a ring the viewer hasn't joined gets the dedicated invite
+    // landing, not the ring page. Removed viewers keep today's behaviour.
+    if (inviteLanding.isInviteLanding(campaign, store.me?.handle)) {
+      hideDemoBanner();
+      view.textContent = '';
+      inviteLanding.mount(view, {
+        campaign,
+        me: store.me,
+        onJoin: (updated, member) => {
+          // Persist like campaign-page's syncCampaignToStore:
+          // replace/insert in store.campaigns, save me, re-render inside.
+          const list = [...(store.campaigns || [])];
+          const idx = list.findIndex((c) => c.id === updated.id);
+          if (idx >= 0) list[idx] = updated;
+          else list.push(updated);
+          store.saveCampaigns(list);
+          store.saveMe(member);
+          store.me = member;
+          renderCampaign(view, id, opts);
+        },
+      });
       return;
     }
     chrome?.update({ view: 'campaign', campaignId: id }, { fromSection: lastSection, title: campaign.title });
