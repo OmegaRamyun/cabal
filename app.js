@@ -19,6 +19,7 @@
 import { createStore } from './src/store.mjs';
 import { decodeCampaignLink, markContributed } from './src/campaign.mjs';
 import * as nostr from './src/nostr.mjs';
+import * as firstRun from './src/first-run.mjs';
 import * as home from './src/home.mjs';
 import * as campaignPage from './src/campaign-page.mjs';
 import * as quoteComposer from './src/quote-composer.mjs';
@@ -839,8 +840,37 @@ async function route() {
     case 'home':
     default:
       view.textContent = '';
+      // V61: cold users (no rings, no demo opt-in) get the first-run
+      // screen, not someone else's dashboard. Only on home, not #/rings.
+      if (firstRun.shouldShowFirstRun({ campaigns: store.campaigns, demoFlag: backend.demoFlag() })) {
+        firstRun.mount(view, {
+          onStartRing: () => { window.location.hash = '#/rings'; },
+          onOpenInvite: (h) => { window.location.hash = h; },
+          onSeeDemo: () => {
+            demo.optInDemo(globalThis.localStorage);
+            window.location.reload();
+          },
+        });
+        break;
+      }
       home.mount(view, { store, navigate });
       break;
+  }
+  // V61/V67: sticky bottom "Start a ring" CTA while ringless. Hidden on
+  // #/rings itself (already creating) and once the user has a real ring.
+  const ctaSlot = document.querySelector('#ringless-cta-slot');
+  if (ctaSlot) {
+    if (parsed.view === 'rings') {
+      ctaSlot.textContent = '';
+      document.body.classList.remove('has-ringless-cta');
+    } else {
+      const shown = firstRun.mountStickyCta(ctaSlot, {
+        campaigns: store.campaigns,
+        demoFlag: backend.demoFlag(),
+        onStartRing: () => { window.location.hash = '#/rings'; },
+      });
+      document.body.classList.toggle('has-ringless-cta', !!shown);
+    }
   }
 }
 
@@ -862,7 +892,8 @@ function renderDemoBanner() {
 }
 
 function start() {
-  demo.seedDemo(globalThis.localStorage);
+  // V61: no cold-load demo seeding — demo loads only on opt-in
+  // (first-run screen's "See a demo ring").
   renderDemoBanner();
   chrome = navChrome.mountChrome(document);
   wireToolsMenu();

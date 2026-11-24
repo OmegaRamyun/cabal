@@ -244,6 +244,10 @@ test("latestPost / latestActivity / postAssists", () => {
 
 test("unassistedPostsFor: newest first, skips posts already assisted and the handle's own posts", () => {
   let c = ring();
+  // Pin the founding post's timestamp: createCampaign stamps real now, and
+  // the hardcoded dates below must stay newer than it (clock-drift fixture
+  // fix — no production change).
+  c.posts[0].createdAt = "2026-11-23T00:00:00Z";
   c = addPost(c, { author: "@brassdev", platform: "reddit", url: "https://reddit.com/r/a/comments/2/y/", createdAt: "2026-11-24T00:00:00Z" });
   c = addPost(c, { author: "@jo", platform: "instagram", url: "https://instagram.com/p/Q/", createdAt: "2026-11-25T00:00:00Z" });
   const [p0, p1, p2] = c.posts;
