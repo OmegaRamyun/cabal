@@ -1,6 +1,6 @@
 # V73b — Modern Web Guidance Mechanical Swaps, Part B
 
-Status: claimed
+Status: done
 Branch: `task/V73b-mwg-swaps-b`
 Base: `0223f53` (v0.2.39)
 
