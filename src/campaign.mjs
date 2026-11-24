@@ -116,14 +116,23 @@ export function validatePost(post, { strict = false, where = "post" } = {}) {
   return errors;
 }
 
+/** Setup validation (V62): game name required; store links and tags are optional. */
+export function validateGameSetup(game) {
+  const errors = [];
+  if (!game || !isNonEmptyString(game.name)) {
+    errors.push("Game name is required.");
+  }
+  return errors;
+}
+
 /**
- * validateCampaign(c) -> string[] (empty = valid). Accepts BOTH shapes.
- * Requires: game.name, at least one of game.links.steam / game.links.itch,
- * title, members >= 1 each with name + handle, valid createdAt, and EITHER
- * a non-empty `posts` array (v2) OR an `anchorPost` with url + text + author
- * + a known platform (legacy). A non-null window needs valid start/end
- * dates with start <= end. Member `status` is legacy: when present it must
- * be 'posted' or 'pending'.
+ * validateCampaign(c) -> string[] (empty = valid). Accepts BOTH shapes
+ * plus postless rings (V62).
+ * Requires: game.name, title, members >= 1 each with name (handle optional),
+ * valid createdAt. Store links and initial posts / anchorPost are optional;
+ * when posts or a legacy anchorPost are present, they are validated.
+ * A non-null window needs valid start/end dates with start <= end.
+ * Member `status` is legacy: when present it must be 'posted' or 'pending'.
  */
 export function validateCampaign(c) {
   const errors = [];
@@ -134,10 +143,6 @@ export function validateCampaign(c) {
     errors.push("game: missing");
   } else {
     if (!isNonEmptyString(c.game.name)) errors.push("game.name: missing");
-    const links = c.game.links || {};
-    if (!isNonEmptyString(links.steam) && !isNonEmptyString(links.itch)) {
-      errors.push("game.links: at least one of steam or itch is required");
-    }
     if (c.game.tags !== undefined && !Array.isArray(c.game.tags)) {
       errors.push("game.tags: must be an array");
     }
@@ -151,15 +156,19 @@ export function validateCampaign(c) {
         seen.add(p.id);
       }
     });
-  } else if (!c.anchorPost || typeof c.anchorPost !== "object") {
-    errors.push("posts: at least one post (or an anchorPost) is required");
-  } else {
-    if (!PLATFORMS.includes(c.anchorPost.platform)) {
-      errors.push("anchorPost.platform: must be one of x, bluesky, threads");
+  } else if (c.posts !== undefined && !Array.isArray(c.posts)) {
+    errors.push("posts: must be an array");
+  } else if (c.anchorPost !== undefined && c.anchorPost !== null) {
+    if (!isObj(c.anchorPost)) {
+      errors.push("anchorPost: must be an object");
+    } else {
+      if (!PLATFORMS.includes(c.anchorPost.platform)) {
+        errors.push("anchorPost.platform: must be one of x, bluesky, threads");
+      }
+      if (!isNonEmptyString(c.anchorPost.url)) errors.push("anchorPost.url: missing");
+      if (!isNonEmptyString(c.anchorPost.text)) errors.push("anchorPost.text: missing");
+      if (!isNonEmptyString(c.anchorPost.author)) errors.push("anchorPost.author: missing");
     }
-    if (!isNonEmptyString(c.anchorPost.url)) errors.push("anchorPost.url: missing");
-    if (!isNonEmptyString(c.anchorPost.text)) errors.push("anchorPost.text: missing");
-    if (!isNonEmptyString(c.anchorPost.author)) errors.push("anchorPost.author: missing");
   }
   if (c.window !== null && c.window !== undefined) {
     const start = Date.parse(c.window.start);
@@ -176,7 +185,9 @@ export function validateCampaign(c) {
     c.members.forEach((m, i) => {
       if (!m || typeof m !== "object") { errors.push(`members[${i}]: not an object`); return; }
       if (!isNonEmptyString(m.name)) errors.push(`members[${i}].name: missing`);
-      if (!isNonEmptyString(m.handle)) errors.push(`members[${i}].handle: missing`);
+      if (m.handle !== undefined && typeof m.handle !== "string") {
+        errors.push(`members[${i}].handle: must be a string`);
+      }
       if (m.status !== undefined && m.status !== "posted" && m.status !== "pending") {
         errors.push(`members[${i}].status: must be 'posted' or 'pending'`);
       }
@@ -255,7 +266,10 @@ export function normalizeCampaign(c) {
     applyFormatDefaults(next);
     if (!Array.isArray(next.posts) || next.posts.length === 0) {
       if (isObj(next.anchorPost)) next.posts = [postFromAnchor(next)];
-      else return next;
+      else {
+        if (Array.isArray(next.members) && next.posts === undefined) next.posts = [];
+        return next;
+      }
     }
     next.posts = next.posts.filter(isObj).map((p) => {
       const post = { ...p };
@@ -354,12 +368,14 @@ export function createCampaign(input = {}) {
   let members = [];
   if (Array.isArray(input.members) && input.members.length > 0) {
     members = input.members.map((m) => ({
-      name: m.name, handle: m.handle,
+      name: m.name,
+      handle: isNonEmptyString(m.handle) ? m.handle.trim() : "",
       ...(m.platform ? { platform: m.platform } : {}),
     }));
   } else if (creator) {
     members = [{
-      name: creator.name, handle: creator.handle,
+      name: creator.name,
+      handle: isNonEmptyString(creator.handle) ? creator.handle.trim() : "",
       ...(creator.platform ? { platform: creator.platform } : {}),
     }];
   }
@@ -391,8 +407,10 @@ export function createCampaign(input = {}) {
       errors.push(...validatePost(post, { strict: true, where: `posts[${i}]` }));
       return post;
     });
+  } else if (anchorPost && isObj(anchorPost)) {
+    base.anchorPost = { ...anchorPost };
   } else {
-    base.anchorPost = anchorPost ? { ...anchorPost } : undefined;
+    base.posts = [];
   }
   const campaign = normalizeCampaign(base);
   errors.push(...validateCampaign(campaign));
@@ -669,6 +687,18 @@ export function parsePostUrl(url) {
     if (platform === "x") {
       const m = parts.length >= 3 && /^status(es)?$/i.test(parts[1]) && /^\w{1,15}$/.test(parts[0]) && parts[0].toLowerCase() !== "i";
       if (m) return { platform, author: `@${parts[0]}` };
+    } else if (platform === "bluesky") {
+      if (parts.length >= 4 && parts[0].toLowerCase() === "profile" && parts[2].toLowerCase() === "post" && parts[1]) {
+        return { platform, author: `@${parts[1].replace(/^@/, "")}` };
+      }
+    } else if (platform === "threads") {
+      if (parts.length >= 3 && parts[0].startsWith("@") && parts[1].toLowerCase() === "post") {
+        return { platform, author: parts[0] };
+      }
+    } else if (platform === "tiktok") {
+      if (parts.length >= 3 && parts[0].startsWith("@") && parts[1].toLowerCase() === "video") {
+        return { platform, author: parts[0] };
+      }
     } else if (platform === "reddit") {
       if (parts.length >= 5 && parts[0].toLowerCase() === "r" && parts[2].toLowerCase() === "comments" && parts[4]) {
         let slug = parts[4];

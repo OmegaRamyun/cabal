@@ -50,9 +50,10 @@ export const {
   isUpcoming,
   addMember,
   createCampaign,
+  validateGameSetup,
 } = campaignModel;
 
-const { relativeTime, initials, avatarHue } = campaignModel;
+const { relativeTime, initials, avatarHue, parsePostUrl } = campaignModel;
 
 // ---------------------------------------------------------------- pure ---
 
@@ -65,17 +66,189 @@ export function parseTags(text) {
     .filter(Boolean);
 }
 
-/** Setup validation: name required, at least one store link. */
-export function validateGameSetup(game) {
-  const errors = [];
-  if (!game || !String(game.name || '').trim()) {
-    errors.push('Game name is required.');
+/**
+ * Normalize a user-supplied handle (or profile URL) to `@handle`.
+ * Returns '' when empty — NEVER fabricates a handle from the game name (V62).
+ */
+export function normalizeHandle(raw) {
+  const s = String(raw ?? '').trim();
+  if (!s) return '';
+  if (/^https?:\/\//i.test(s)) {
+    try {
+      const u = new URL(s);
+      const parts = u.pathname.split('/').filter(Boolean);
+      const host = u.hostname.toLowerCase();
+      if ((host === 'bsky.app' || host.endsWith('.bsky.app')) && parts[0] === 'profile' && parts[1]) {
+        return '@' + parts[1].replace(/^@+/, '');
+      }
+      const last = parts[parts.length - 1] || '';
+      const clean = last.replace(/^@+/, '');
+      return clean ? '@' + clean : '';
+    } catch {
+      return '';
+    }
   }
-  const links = (game && game.links) || {};
-  if (!String(links.steam || '').trim() && !String(links.itch || '').trim()) {
-    errors.push('Add at least one store link (Steam or itch).');
+  const clean = s.replace(/^@+/, '').trim();
+  return clean ? '@' + clean : '';
+}
+
+function isHttpUrl(s) {
+  if (typeof s !== 'string' || !/^https?:\/\//i.test(s.trim())) return false;
+  try {
+    const u = new URL(s.trim());
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * V62 merged creation validation: ONLY Game name and Ring name are required.
+ * Store links, tags, handle, and anchor post are all optional.
+ * When a post URL IS supplied, validates the URL and (for X/Bluesky) post text.
+ */
+export function validateRingCreation(input = {}) {
+  const errors = [];
+  const gameName = String(input.gameName ?? input.game?.name ?? '').trim();
+  const ringName = String(input.ringName ?? input.title ?? '').trim();
+  if (!gameName) errors.push('Game name is required.');
+  if (!ringName) errors.push('Ring name is required.');
+
+  const postUrl = String(input.postUrl ?? input.url ?? '').trim();
+  if (postUrl) {
+    if (!isHttpUrl(postUrl)) {
+      errors.push('Post link must be a valid http(s) URL.');
+    } else {
+      const parsed = parsePostUrl(postUrl);
+      const platform =
+        parsed.platform && parsed.platform !== 'other'
+          ? parsed.platform
+          : String(input.platform || parsed.platform || 'other').trim().toLowerCase();
+      const handle = normalizeHandle(input.handle) || parsed.author || normalizeHandle(input.existingMe?.handle);
+      const postText = String(input.postText ?? input.text ?? '').trim();
+      if (!handle) {
+        errors.push('Add your handle for this post (or leave the post link blank to add one later).');
+      }
+      if ((platform === 'x' || platform === 'bluesky') && !postText) {
+        errors.push('Post text is required for X and Bluesky posts (or leave the post link blank to add one later).');
+      }
+    }
   }
   return errors;
+}
+
+/**
+ * V62 pure builder for the merged Game + Ring creation form.
+ * Never fabricates a handle; preserves optional tags; allows no store links
+ * and no anchor post.
+ */
+export function buildMergedCreation(input = {}) {
+  const errors = validateRingCreation(input);
+  if (errors.length > 0) {
+    return { ok: false, errors, game: null, me: null, campaign: null };
+  }
+
+  const gameName = String(input.gameName ?? input.game?.name ?? '').trim();
+  const ringName = String(input.ringName ?? input.title ?? '').trim();
+  const steam = String(input.steam ?? '').trim();
+  const itch = String(input.itch ?? '').trim();
+  const postUrl = String(input.postUrl ?? input.url ?? '').trim();
+  const postText = String(input.postText ?? input.text ?? '').trim();
+  const parsedUrl = postUrl ? parsePostUrl(postUrl) : { platform: 'other' };
+
+  const handle =
+    normalizeHandle(input.handle) ||
+    parsedUrl.author ||
+    normalizeHandle(input.existingMe?.handle) ||
+    '';
+
+  const prevLinks = (input.existingGame && input.existingGame.links) || {};
+  const links = {};
+  const finalSteam = steam || (input.steam === undefined ? prevLinks.steam || '' : '');
+  const finalItch = itch || (input.itch === undefined ? prevLinks.itch || '' : '');
+  if (finalSteam) links.steam = finalSteam;
+  if (finalItch) links.itch = finalItch;
+  if (handle && (parsedUrl.platform === 'x' || (!postUrl && prevLinks.x))) {
+    links.x = prevLinks.x || `https://x.com/${handle.replace(/^@/, '')}`;
+  } else if (prevLinks.x) {
+    links.x = prevLinks.x;
+  }
+
+  const tags =
+    Array.isArray(input.tags)
+      ? input.tags.map((t) => String(t).trim()).filter(Boolean)
+      : input.tags !== undefined
+      ? parseTags(input.tags)
+      : Array.isArray(input.existingGame?.tags)
+      ? [...input.existingGame.tags]
+      : [];
+
+  const game = { name: gameName, links, tags };
+  const me = handle
+    ? { name: (input.existingMe && input.existingMe.name) || gameName, handle }
+    : input.existingMe || null;
+  const creator = {
+    name: (me && me.name) || gameName,
+    handle,
+  };
+
+  let posts;
+  if (postUrl) {
+    const platform =
+      parsedUrl.platform && parsedUrl.platform !== 'other'
+        ? parsedUrl.platform
+        : String(input.platform || parsedUrl.platform || 'other').trim().toLowerCase();
+    posts = [
+      {
+        author: handle,
+        authorName: creator.name,
+        platform,
+        url: postUrl,
+        ...(postText ? { text: postText } : {}),
+        kind: 'announcement',
+      },
+    ];
+  }
+
+  try {
+    const campaign = createCampaign({
+      game,
+      title: ringName,
+      ...(posts ? { posts } : {}),
+      window: null,
+      creator,
+      ...(input.key ? { key: input.key } : {}),
+      ...(input.formatId ? { formatIds: [input.formatId] } : {}),
+    });
+    return { ok: true, errors: [], game, me, campaign };
+  } catch (err) {
+    return { ok: false, errors: [err.message], game: null, me: null, campaign: null };
+  }
+}
+
+/** True when at least one ring has any posts or an anchorPost. */
+export function hasRingActivity(campaigns) {
+  return (campaigns || []).some(
+    (c) => (Array.isArray(c?.posts) && c.posts.length > 0) || Boolean(c?.anchorPost),
+  );
+}
+
+/**
+ * V70: decide what to render for the "Your turn" section on Home.
+ * Returns 'posts' when unassisted posts exist, 'caught-up' when the user has
+ * ring activity and nothing pending, or 'none' when there is no activity
+ * (kills the "Your turn · All caught up" pill on a quiet/empty account).
+ */
+export function shouldShowTurnSection(campaigns, me) {
+  if (yourTurnPosts(campaigns, me).length > 0) return 'posts';
+  const mine = myCampaigns(campaigns, me);
+  if (mine.length > 0 && hasRingActivity(mine)) return 'caught-up';
+  return 'none';
+}
+
+/** V70: hide "Explore Network ›" while the user has no rings. */
+export function shouldShowExploreNetwork(rings) {
+  return Array.isArray(rings) && rings.length > 0;
 }
 
 function handleKey(me) {
@@ -411,82 +584,12 @@ export function mount(rootEl, ctx) {
 
   function render() {
     if (!store.game) {
-      renderSetup();
+      renderCreate({ isFirstTime: true });
     } else if (view === 'create') {
-      renderCreate();
+      renderCreate({ isFirstTime: false });
     } else {
       renderDashboard();
     }
-  }
-
-  function renderSetup() {
-    rootEl.innerHTML = `
-      <section class="home-setup cabal-form-page">
-        <header class="cabal-page-header">
-          <div class="cabal-page-header-main">
-            <h2>What&rsquo;s your game?</h2>
-            <p class="view-lede">One quick setup, then this becomes your ring dashboard.</p>
-          </div>
-        </header>
-        <form id="game-setup-form" class="cabal-form">
-          <p class="form-error" id="setup-errors" hidden></p>
-          <label>Game name
-            <input type="text" name="name" required autocomplete="off">
-          </label>
-          <div class="cabal-form-row">
-            <label>Steam link
-              <input type="url" name="steam" placeholder="https://store.steampowered.com/app/..." autocomplete="off">
-            </label>
-            <label>itch.io link
-              <input type="url" name="itch" placeholder="https://...itch.io/..." autocomplete="off">
-            </label>
-          </div>
-          <div class="cabal-form-row">
-            <label>Tags (comma-separated)
-              <input type="text" name="tags" placeholder="roguelike, cozy, pixel-art" autocomplete="off">
-            </label>
-            <label>X handle
-              <input type="text" name="x" placeholder="@yourhandle" autocomplete="off">
-            </label>
-          </div>
-          <div class="cabal-form-footer">
-            <button type="submit" class="primary btn-md">Save my game</button>
-          </div>
-        </form>
-      </section>`;
-    const form = rootEl.querySelector('#game-setup-form');
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const data = new FormData(form);
-      const links = {};
-      const steam = String(data.get('steam') || '').trim();
-      const itch = String(data.get('itch') || '').trim();
-      const x = String(data.get('x') || '').trim();
-      if (steam) links.steam = steam;
-      if (itch) links.itch = itch;
-      if (x) links.x = x.startsWith('http') ? x : `https://x.com/${x.replace(/^@/, '')}`;
-      const game = {
-        name: String(data.get('name') || '').trim(),
-        links,
-        tags: parseTags(data.get('tags')),
-      };
-      const errors = validateGameSetup(game);
-      const errEl = rootEl.querySelector('#setup-errors');
-      if (errors.length) {
-        errEl.textContent = errors.join(' ');
-        errEl.hidden = false;
-        return;
-      }
-      store.saveGame(game);
-      store.game = game;
-      if (links.x && typeof store.saveMe === 'function') {
-        const handle = '@' + links.x.replace(/\/$/, '').split('/').pop();
-        const me = { name: game.name, handle };
-        store.saveMe(me);
-        store.me = me;
-      }
-      render();
-    });
   }
 
   function renderDashboard() {
@@ -494,12 +597,29 @@ export function mount(rootEl, ctx) {
     const campaigns = store.campaigns || [];
     const live = liveCampaign(campaigns);
     const turnPosts = yourTurnPosts(campaigns, store.me);
+    const turnState = shouldShowTurnSection(campaigns, store.me);
     const rings = sortRingsByActivity(myCampaigns(campaigns, store.me));
+    const showExplore = shouldShowExploreNetwork(rings);
     const showPrimer = !isPrimerDismissed();
     const liveActivity = live ? relativeTime(latestActivity(live)) : '';
 
+    const turnHtml =
+      turnState === 'posts'
+        ? `<div class="turn-section">
+            <section class="your-turn">
+              <h3 class="section-eyebrow">Your turn (${turnPosts.length})</h3>
+              <ul class="ring-list-rows">${turnPosts.map(turnPostRowHtml).join('')}</ul>
+            </section>
+          </div>`
+        : turnState === 'caught-up'
+        ? `<div class="turn-section">
+            <div class="turn-status-row"><span class="status-pill status-pill--quiet">${esc(HOME_COPY.turnQuiet)}</span></div>
+          </div>`
+        : '';
+
     rootEl.innerHTML = `
       <section class="home-dashboard">
+        <p class="ring-explainer-line">${esc(START_RING.help)}</p>
         ${
           showPrimer
             ? `<aside class="primer-card" id="home-primer-card">
@@ -522,8 +642,6 @@ export function mount(rootEl, ctx) {
           </div>
           <div class="cabal-page-header-actions">
             <button type="button" id="start-campaign" class="primary btn-md">${esc(START_RING.button)}</button>
-            <button type="button" class="info-btn btn-sm" popovertarget="start-ring-info" aria-label="What is a ring?">${NAV_ICONS.info}</button>
-            <div id="start-ring-info" popover class="cabal-popover">${esc(START_RING.help)}</div>
           </div>
         </header>
 
@@ -537,21 +655,12 @@ export function mount(rootEl, ctx) {
             : ''
         }
 
-        <div class="turn-section">
-          ${
-            turnPosts.length
-              ? `<section class="your-turn">
-                  <h3 class="section-eyebrow">Your turn (${turnPosts.length})</h3>
-                  <ul class="ring-list-rows">${turnPosts.map(turnPostRowHtml).join('')}</ul>
-                </section>`
-              : `<div class="turn-status-row"><span class="status-pill status-pill--quiet">${esc(HOME_COPY.turnQuiet)}</span></div>`
-          }
-        </div>
+        ${turnHtml}
 
         <section class="your-rings">
           <div class="section-head-row">
             <h3 class="section-eyebrow">My Rings</h3>
-            <a class="section-head-link" href="#/campaigns">Explore Network &rsaquo;</a>
+            ${showExplore ? '<a class="section-head-link" href="#/campaigns">Explore Network &rsaquo;</a>' : ''}
           </div>
           <p class="view-lede">${esc(HOME_COPY.ringsLede)}</p>
           ${
@@ -591,114 +700,152 @@ export function mount(rootEl, ctx) {
     });
   }
 
-  function renderCreate() {
+  function renderCreate({ isFirstTime = false } = {}) {
+    const existingGame = store.game || null;
+    const existingLinks = (existingGame && existingGame.links) || {};
+    const existingTags = Array.isArray(existingGame?.tags) ? existingGame.tags.join(', ') : '';
+    const existingHandle = store.me?.handle || '';
+
     rootEl.innerHTML = `
       <section class="campaign-create cabal-form-page">
+        <p class="ring-explainer-line">${esc(START_RING.help)}</p>
         <header class="cabal-page-header">
           <div class="cabal-page-header-main">
             <h2>${esc(START_RING.button)}</h2>
-            <p class="view-lede">For <strong>${esc(store.game.name)}</strong> &mdash; paste a post link and invite other devs to boost it in their own words.</p>
+            <p class="view-lede">Name your game and your ring &mdash; everything else is optional and can be added on the ring page.</p>
           </div>
         </header>
         ${ctx && ctx.formatId ? `<p class="format-preselected">Template: <strong>${esc(ctx.formatTagline || ctx.formatId)}</strong></p>` : ''}
         <form id="campaign-create-form" class="cabal-form">
           <p class="form-error" id="create-errors" hidden></p>
-          <label>Ring name
-            <input type="text" name="title" required autocomplete="off" placeholder="e.g. Devlog &amp; launch ring">
-          </label>
           <div class="cabal-form-row">
-            <label>Where is your post?
-              <select name="platform">
-                <option value="x">X</option>
-                <option value="bluesky">Bluesky</option>
-                <option value="reddit">Reddit</option>
-                <option value="instagram">Instagram</option>
-                <option value="tiktok">TikTok</option>
-                <option value="youtube">YouTube</option>
-                <option value="threads">Threads</option>
-                <option value="other">Other</option>
-              </select>
+            <label>Game name
+              <input type="text" name="gameName" required value="${esc(existingGame?.name || '')}" placeholder="e.g. Brass Orchard" autocomplete="off">
             </label>
-            <label>Your handle on that post
-              <input type="text" name="author" required placeholder="@yourhandle" value="${esc(store.me?.handle || '')}" autocomplete="off">
+            <label>Ring name
+              <input type="text" name="ringName" required autocomplete="off" placeholder="e.g. Devlog &amp; launch ring">
             </label>
           </div>
-          <label>Link to your post
-            <input type="url" name="url" required placeholder="https://x.com/.../status/..." autocomplete="off">
-          </label>
-          <label>What the post says
-            <textarea name="text" required rows="2" placeholder="Paste the post text (required for X / Bluesky) or a line of context"></textarea>
-          </label>
+          <div class="cabal-form-row">
+            <label>Tags (optional, comma-separated)
+              <input type="text" name="tags" value="${esc(existingTags)}" placeholder="roguelike, cozy, pixel-art" autocomplete="off">
+            </label>
+            <label>Your handle (optional)
+              <input type="text" name="handle" value="${esc(existingHandle)}" placeholder="@yourhandle" autocomplete="off">
+            </label>
+          </div>
+          <details class="create-optional-details">
+            <summary>Optional: store links &amp; first post (or add later on the ring page)</summary>
+            <div class="cabal-form-row">
+              <label>Steam link (optional)
+                <input type="url" name="steam" value="${esc(existingLinks.steam || '')}" placeholder="https://store.steampowered.com/app/..." autocomplete="off">
+              </label>
+              <label>itch.io link (optional)
+                <input type="url" name="itch" value="${esc(existingLinks.itch || '')}" placeholder="https://...itch.io/..." autocomplete="off">
+              </label>
+            </div>
+            <label>Link to a post (optional)
+              <input type="url" name="url" placeholder="https://x.com/.../status/... or bsky.app / reddit / youtube" autocomplete="off">
+            </label>
+            <div class="cabal-form-row">
+              <label>Platform (inferred from link)
+                <select name="platform">
+                  <option value="x">X</option>
+                  <option value="bluesky">Bluesky</option>
+                  <option value="reddit">Reddit</option>
+                  <option value="instagram">Instagram</option>
+                  <option value="tiktok">TikTok</option>
+                  <option value="youtube">YouTube</option>
+                  <option value="threads">Threads</option>
+                  <option value="other">Other</option>
+                </select>
+              </label>
+              <label>What the post says (optional; needed for X / Bluesky)
+                <textarea name="text" rows="2" placeholder="Paste the post text or a line of context"></textarea>
+              </label>
+            </div>
+          </details>
           <div class="cabal-form-footer">
             <button type="submit" class="primary btn-md">Start my ring</button>
-            <button type="button" id="create-cancel" class="btn-md">Cancel</button>
+            ${isFirstTime ? '' : '<button type="button" id="create-cancel" class="btn-md">Cancel</button>'}
           </div>
         </form>
       </section>`;
-    rootEl.querySelector('#create-cancel').addEventListener('click', () => {
-      view = 'dashboard';
-      render();
-    });
+
+    const cancelBtn = rootEl.querySelector('#create-cancel');
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', () => {
+        view = 'dashboard';
+        render();
+      });
+    }
+
     const form = rootEl.querySelector('#campaign-create-form');
+    const urlInput = form.querySelector('input[name="url"]');
+    const platformSelect = form.querySelector('select[name="platform"]');
+    const handleInput = form.querySelector('input[name="handle"]');
+    const textInput = form.querySelector('textarea[name="text"]');
+    const touched = {
+      platform: false,
+      handle: Boolean(existingHandle),
+      text: false,
+    };
+
+    platformSelect.addEventListener('change', () => { touched.platform = true; });
+    handleInput.addEventListener('input', () => { touched.handle = Boolean(handleInput.value.trim()); });
+    textInput.addEventListener('input', () => { touched.text = Boolean(textInput.value.trim()); });
+
+    const prefillFromUrl = () => {
+      const parsed = parsePostUrl(urlInput.value);
+      if (!touched.platform && parsed.platform) {
+        platformSelect.value = parsed.platform;
+      }
+      if (!touched.handle && parsed.author) {
+        handleInput.value = parsed.author;
+      }
+      if (!touched.text && (parsed.text || parsed.title)) {
+        textInput.value = parsed.text || parsed.title;
+      }
+    };
+    urlInput.addEventListener('input', prefillFromUrl);
+    urlInput.addEventListener('change', prefillFromUrl);
+
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       const data = new FormData(form);
-      const title = String(data.get('title') || '').trim();
-      const anchorPost = {
-        platform: String(data.get('platform') || 'x'),
-        url: String(data.get('url') || '').trim(),
-        text: String(data.get('text') || '').trim(),
-        author: String(data.get('author') || '').trim(),
-      };
-      const errors = [];
-      if (!title) errors.push('Ring name is required.');
-      if (!anchorPost.url) errors.push('The link to your post is required.');
-      if (!anchorPost.text && (anchorPost.platform === 'x' || anchorPost.platform === 'bluesky')) {
-        errors.push('Post text is required for X and Bluesky posts.');
-      }
-      if (!anchorPost.author) errors.push('Your handle on that post is required.');
+      const result = buildMergedCreation({
+        gameName: data.get('gameName'),
+        ringName: data.get('ringName'),
+        tags: data.get('tags'),
+        handle: data.get('handle'),
+        steam: data.get('steam'),
+        itch: data.get('itch'),
+        postUrl: data.get('url'),
+        platform: data.get('platform'),
+        postText: data.get('text'),
+        existingGame: store.game,
+        existingMe: store.me,
+        key: generateCampaignKey().key,
+        formatId: ctx && ctx.formatId ? ctx.formatId : undefined,
+      });
       const errEl = rootEl.querySelector('#create-errors');
-      if (errors.length) {
-        errEl.textContent = errors.join(' ');
+      if (!result.ok) {
+        errEl.textContent = result.errors.join(' ');
         errEl.hidden = false;
         return;
       }
-      const creator =
-        store.me && store.me.handle
-          ? store.me
-          : {
-              name: store.game.name,
-              handle:
-                '@' +
-                store.game.name
-                  .toLowerCase()
-                  .replace(/[^a-z0-9]+/g, '')
-                  .slice(0, 20),
-            };
-      let campaign;
-      try {
-        campaign = createCampaign({
-          game: store.game,
-          title,
-          anchorPost,
-          window: null,
-          creator,
-          key: generateCampaignKey().key,
-          // V60: a preselected template is stored canonically as formatIds,
-          // never as a legacy singular formatId.
-          ...(ctx && ctx.formatId ? { formatIds: [ctx.formatId] } : {}),
-        });
-      } catch (err) {
-        errEl.textContent = err.message;
-        errEl.hidden = false;
-        return;
+      store.saveGame(result.game);
+      store.game = result.game;
+      if (result.me && typeof store.saveMe === 'function') {
+        store.saveMe(result.me);
+        store.me = result.me;
       }
-      const campaigns = [...(store.campaigns || []), campaign];
+      const campaigns = [...(store.campaigns || []), result.campaign];
       store.saveCampaigns(campaigns);
       store.campaigns = campaigns;
       view = 'dashboard';
       render();
-      navigate('campaign', { campaignId: campaign.id });
+      navigate('campaign', { campaignId: result.campaign.id });
     });
   }
 
