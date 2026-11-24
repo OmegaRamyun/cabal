@@ -154,10 +154,10 @@ test("theory: Nostr-framed sync honesty with the privacy reality in plain words"
   assert.match(t, /cannot be reliably deleted/);
 });
 
-test("what page: a ring that keeps going; founding post is the start", () => {
+test("what page: 60-word 3-step card (V65 — intro-as-onboarding replaced)", () => {
   const t = text(getIntroPage("intro"));
-  assert.match(t, /A ring that keeps going/);
-  assert.match(t, /founding post is the start/);
+  assert.match(t, /How rings work/);
+  assert.match(t, /Start or join a ring/);
   assert.doesNotMatch(t, /one-push|one push/i);
 });
 

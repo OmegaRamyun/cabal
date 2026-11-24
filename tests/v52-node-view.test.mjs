@@ -101,7 +101,7 @@ test("exported constants match contract values", () => {
   assert.ok(START_RING_ACTION.help.length > 0);
 
   assert.equal(Object.isFrozen(NEW_TEMPLATE_ACTION), true);
-  assert.equal(NEW_TEMPLATE_ACTION.label, "New campaign template");
+  assert.equal(NEW_TEMPLATE_ACTION.label, "New post format"); // V69 rename
   assert.equal(NEW_TEMPLATE_ACTION.route, "#/campaigns/new");
   assert.ok(NEW_TEMPLATE_ACTION.help.length > 0);
 });

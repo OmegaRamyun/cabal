@@ -28,13 +28,19 @@ test("createFormat: missing tagline/description/howTo rejected, valid gets fmt_ 
   assert.deepEqual(validateFormat(f), []);
 });
 
-test("buildFormatFromForm: per-field errors, disclosure required, tags parsed", () => {
+test("buildFormatFromForm: per-field errors, disclosure prefilled not regex-gated, tags parsed", () => {
   const empty = buildFormatFromForm({});
   assert.equal(empty.ok, false);
   assert.deepEqual(Object.keys(empty.errors).sort(), ["description", "howTo", "tagline"]);
-  const noDisc = buildFormatFromForm({ ...good, howTo: "Post one update." });
+  // V68: plain-English guidance without the word "disclose" is accepted —
+  // the disclosure reminder is prefilled, not regex-gated.
+  const plain = buildFormatFromForm({ ...good, howTo: "Post one update." });
+  assert.equal(plain.ok, true);
+  assert.match(plain.format.disclosure, /dev ring/);
+  // An explicitly blanked disclosure still errors.
+  const noDisc = buildFormatFromForm({ ...good, disclosure: "  " });
   assert.equal(noDisc.ok, false);
-  assert.ok(noDisc.errors.howTo.includes("disclosure"));
+  assert.ok(noDisc.errors.disclosure.includes("disclosure"));
   const ok = buildFormatFromForm({ ...good, tags: " Devlog, devlog, Clips ," });
   assert.equal(ok.ok, true);
   assert.deepEqual(ok.format.tags, ["devlog", "clips"]);
@@ -80,13 +86,13 @@ test("create form: required fields block submit; valid submit calls onCreate the
   const calls = [];
   mountCreate(root, { onCreate: (f) => calls.push(["create", f]), onCreated: (f) => calls.push(["created", f]) });
   const form = root.all("form")[0];
-  assert.ok(root.textContent.includes("New campaign template"));
+  assert.ok(root.textContent.includes("New post format"));
   assert.equal(field(root, "tagline").required, true);
   assert.equal(field(root, "tags").required, false);
 
   form.fire("submit");
   assert.equal(calls.length, 0);
-  assert.ok(root.textContent.includes("Give the template a short name."));
+  assert.ok(root.textContent.includes("Give the post format a short name."));
 
   field(root, "tagline").value = good.tagline;
   field(root, "description").value = good.description;
@@ -110,7 +116,7 @@ test("create form: onCreate throwing shows an error and skips onCreated", () => 
   assert.ok(root.textContent.includes("disk full"));
 });
 
-test("Campaigns view: New campaign template button + explainer, calls onNewTemplate or sets the route", () => {
+test("Campaigns view: New post format button + explainer, calls onNewTemplate or sets the route", () => {
   const root = fresh();
   let n = 0;
   mountDiscovery(root, { campaigns: [], formats: [], onNewTemplate: () => n++ });

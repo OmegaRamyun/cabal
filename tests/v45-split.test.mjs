@@ -88,9 +88,11 @@ test("usageLabel: never invents a count", () => {
   assert.equal(usageLabel("fmt_aaaaaaaa", new Map([["fmt_aaaaaaaa", 4]])), "used by 4 rings");
 });
 
-test("intro: What page names the Rings / Campaigns split", () => {
+test("intro: What page is the 60-word 3-step card (V65 — no Rings/Campaigns pileup)", () => {
   const what = INTRO_PAGES.find((p) => p.id === "intro");
-  assert.ok(what.sections.some((s) => s.heading === "Rings and Campaigns"));
+  assert.equal(what.title, "How rings work");
+  assert.ok(what.sections.some((s) => s.heading === "Three steps"));
+  assert.doesNotMatch(JSON.stringify(what), /Rings and Campaigns/);
 });
 
 // --- minimal fake DOM for mount ---

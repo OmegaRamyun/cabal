@@ -9,7 +9,7 @@
 //   #/discover            legacy route to the Campaigns view
 //   #/campaigns           Campaigns — ONE node view (V53): rings +
 //                          templates as nodes, edges from real data
-//   #/campaigns/new       New campaign template (V49 create form)
+//   #/campaigns/new       New post format (V49 create form, renamed V69)
 //   #/format/<id>         one campaign template's page
 //   #/tools               campaign tools (Kickstarter, Steam, Discord, checklist)
 //   #/terms               disclaimers and terms
@@ -153,7 +153,11 @@ export function parseHash(hash = '') {
   if (view === 'format' && param) {
     return { view: 'format', formatId: decodeURIComponent(param) };
   }
-  if (view === 'tools') return { view: 'tools' };
+  if (view === 'tools') {
+    // V65: Theory lives in Tools/Docs now.
+    if (param === 'theory') return { view: 'intro', pageId: 'theory' };
+    return { view: 'tools' };
+  }
   if (view === 'terms') return { view: 'terms' };
   if (view === 'intro') {
     return { view: 'intro', pageId: param || 'intro' };
@@ -349,6 +353,10 @@ function renderCampaign(view, id, opts = {}) {
       },
       onPassOn: ({ campaignId, postId }) => {
         gamify.record('passon', { campaignId, postId });
+      },
+      // V66: completing an assist (Enscryption) unlocks the Field Journal.
+      onAssist: () => {
+        gamify.record('assist', {});
       },
       // V43c seam: the page already removed the member locally and synced
       // the store. Republish the updated membership to the relays (V43b)
@@ -573,7 +581,12 @@ async function renderCampaigns(view) {
         }
       },
       onStartRing: () => { window.location.hash = '#/rings'; },
-      onNewTemplate: () => { window.location.hash = '#/campaigns/new'; },
+      // V69: the "New post format" action only fires for rings with 2+
+      // devs. Without a handler the node view falls back to
+      // #/campaigns/new, where mountCreate shows the locked state.
+      onNewTemplate: formats.canCreateFormat(store.campaigns, store.me)
+        ? () => { window.location.hash = '#/campaigns/new'; }
+        : undefined,
     });
   };
   mountIt(usageCache);
@@ -657,13 +670,16 @@ async function renderFormat(view, formatId) {
  * view with the format preselected. Unknown ids are ignored.
  */
 /**
- * renderNewTemplate(view) — the "New campaign template" form (V49):
+ * renderNewTemplate(view) — the "New post format" form (V49, renamed V69):
  * tagline + description + how-to, saved to localStorage by onCreate,
  * then straight to the new template's page.
  */
 function renderNewTemplate(view) {
   view.textContent = '';
   formats.mountCreate(view, {
+    // V69: gate the form on 2+ devs (locked state otherwise).
+    rings: store.campaigns,
+    me: store.me,
     onCreate: (f) => userFormats.addUserFormat(f),
     onCreated: (f) => { window.location.hash = `#/format/${encodeURIComponent(f.id)}`; },
     onCancel: () => { window.location.hash = '#/campaigns'; },
@@ -714,6 +730,10 @@ function renderHomeExtras(view) {
   gamify.mount(journalSlot, {
     pageIds: intro.introPageIds(),
     firstPostIds: firstPostIdsFor(store.campaigns),
+    // V66: the journal only renders after the user's first assist (or a
+    // real assist already in the rings) — pass the evidence through.
+    campaigns: store.campaigns,
+    me: store.me,
   });
 }
 
@@ -765,6 +785,34 @@ function renderTools(view) {
     view.appendChild(section);
     mod.mount(mountEl);
   }
+
+  // V65: Theory lives in Tools/Docs now (reference, not onboarding).
+  const docsSec = document.createElement('section');
+  const docsH = document.createElement('h3');
+  docsH.textContent = 'Reference docs';
+  docsSec.appendChild(docsH);
+  const docsP = document.createElement('p');
+  docsP.className = 'view-lede';
+  docsP.innerHTML = '<a href="#/tools/theory">The theory</a> — why rings work the way they do. <a href="#/intro/how">How rings work</a>.';
+  docsSec.appendChild(docsP);
+  view.appendChild(docsSec);
+
+  // V66: the Field Journal lives here once unlocked — explicit open
+  // (forceShow) so a user who earned it can always find it.
+  const journalSec = document.createElement('section');
+  const journalH = document.createElement('h3');
+  journalH.textContent = 'Field journal';
+  journalSec.appendChild(journalH);
+  const journalMount = document.createElement('div');
+  journalSec.appendChild(journalMount);
+  view.appendChild(journalSec);
+  gamify.mount(journalMount, {
+    pageIds: intro.introPageIds(),
+    firstPostIds: firstPostIdsFor(store.campaigns),
+    campaigns: store.campaigns,
+    me: store.me,
+    forceShow: true,
+  });
 
   const termsSec = document.createElement('section');
   termsSec.className = 'tools-disclaimer';

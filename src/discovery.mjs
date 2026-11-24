@@ -13,7 +13,7 @@ import { formatsForDiscovery, usageLabel, normalizeFormat } from './campaign-for
 export { postedCount };
 
 // V49: the Campaigns view's create action.
-export const NEW_TEMPLATE_LABEL = "New campaign template";
+export const NEW_TEMPLATE_LABEL = "New post format";
 export const NEW_TEMPLATE_ROUTE = "#/campaigns/new";
 export const NEW_TEMPLATE_HELP =
   "A template is a format you write once: the shape of a post and how to disclose it. " +

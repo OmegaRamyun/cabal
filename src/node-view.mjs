@@ -37,7 +37,7 @@ export const START_RING_ACTION = Object.freeze({
 });
 
 export const NEW_TEMPLATE_ACTION = Object.freeze({
-  label: "New campaign template",
+  label: "New post format",
   route: "#/campaigns/new",
   help: "Write a reusable post shape and disclosure line so any ring can pick it up and run it.",
 });

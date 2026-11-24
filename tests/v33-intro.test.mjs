@@ -9,7 +9,7 @@ const allText = () =>
 
 test("lookup by id", () => {
   assert.deepEqual(introPageIds(), ["intro", "how", "theory"]);
-  assert.equal(getIntroPage("how").title, "How a campaign works");
+  assert.equal(getIntroPage("how").title, "How rings work");
   assert.equal(getIntroPage("nope"), null);
 });
 

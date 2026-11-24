@@ -191,7 +191,8 @@ describe('V57 ring page & copy helpers', () => {
   test('standardized copy uses Ring / Template / Network and short ledes', () => {
     assert.ok(DEMO_BANNER_SHORT.length < 80);
     assert.match(HOME_COPY.ringsLede, /ring/i);
-    assert.match(CREATE_TEMPLATE_COPY.lede, /Network/);
+    // V69: the create-format lede is the verbatim subline, no Network mention.
+    assert.match(CREATE_TEMPLATE_COPY.lede, /any ring can try/);
     assert.ok(CREATE_TEMPLATE_COPY.lede.length < 140);
   });
 });

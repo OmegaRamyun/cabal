@@ -1177,6 +1177,8 @@ export function mount(rootEl, ctx) {
             quoteText: String(draft || '').trim() || undefined,
           });
           syncCampaignToStore(store, campaign, updated);
+          // V66: completing an assist unlocks the Field Journal.
+          if (typeof ctx.onAssist === 'function') ctx.onAssist({ campaignId: campaign.id, postId: post.id });
           render();
         },
       });
@@ -1196,6 +1198,8 @@ export function mount(rootEl, ctx) {
           ...(note ? { note } : {}),
         });
         syncCampaignToStore(store, campaign, updated);
+        // V66: completing an assist unlocks the Field Journal.
+        if (typeof ctx.onAssist === 'function') ctx.onAssist({ campaignId: campaign.id, postId });
         render();
       });
     });
@@ -1310,7 +1314,7 @@ export function mount(rootEl, ctx) {
             ${listHtml}
           </div>
           <div class="adopt-picker-foot">
-            <a class="section-head-link" href="#/campaigns/new">New campaign template</a>
+            <a class="section-head-link" href="#/campaigns/new">New post format</a>
           </div>
         `;
 
