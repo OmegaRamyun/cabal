@@ -90,6 +90,15 @@ middle dot `src/nostr.mjs:874`) landed in the V73a/V73b worker lanes.
   (WARN 29), dark surfaces x4 (WARN 41, H7 render tier), finish items
   F3 x1 / F7 x3 / F24 x1 (H10-H12). Full output:
   `/tmp/sloplint-after-v72-full.txt`.
+- Render tier (run by the coordinator after the merges, puppeteer-core +
+  Playwright headless shell via a `--no-sandbox` wrapper):
+  `2 FAIL, 3 REFLEX, 20 WARN` across the 2 files + the local URL, with 5
+  screenshots in `~/workspace/cabal-wt-merge/.hallmark/shots`. The one new
+  FAIL is FAIL 40 (input edge 1.56:1 at 1440px) — real, but out of this
+  round's ranked scope; queued as a follow-up in `tasks/INDEX.md`, not
+  fixed here. The 3 REFLEXes are not applicable (39b control heights are
+  app UI at 38-40px, which the fix note permits; 44c/77 misread an app
+  shell as a marketing landing page).
 - REFLEX 26b "no `:active`" is a linter false positive: a global
   `button:active` rule exists at `style.css:389-391`. Nothing to do.
 
