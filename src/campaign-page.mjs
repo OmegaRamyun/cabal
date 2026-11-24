@@ -60,6 +60,24 @@ export const PLATFORM_LABELS = Object.freeze({
 export const PASS_IT_ON_COPY =
   'A ringmate’s post travels further when a real reader passes it on. If one speaks to you, open it and share its link in your own #Ring channel or wherever your people gather. Only what you genuinely like — never an obligation, never a count.';
 
+export const INVITE_PROMPT_COPY = 'Your ring is live. It needs other devs.';
+export const RING_COLUMN_CLASS = 'campaign-page--centered';
+
+/** V63: pin the invite prompt card at the top when a ring has exactly 1 member. */
+export function shouldShowInvitePrompt(campaign) {
+  return Boolean(campaign && Array.isArray(campaign.members) && campaign.members.length === 1);
+}
+
+/**
+ * V63: hide the empty Templates block on new 1-member rings; show once at
+ * least one template is running OR the ring has 2+ devs.
+ */
+export function shouldShowTemplatesSection(campaign) {
+  if (!campaign || typeof campaign !== 'object') return false;
+  if (formatIdsForRing(campaign).length > 0) return true;
+  return Array.isArray(campaign.members) && campaign.members.length >= 2;
+}
+
 // ---------------------------------------------------------------- pure ---
 
 function clone(v) {
@@ -752,11 +770,20 @@ export function mount(rootEl, ctx) {
     const game = campaign.game || store.game || { name: 'Untitled game', links: {}, tags: [] };
     const me = store.me || {};
     const iAmRemoved = controlsHidden(campaign, me);
+    const isLocalSoloCreator =
+      !iAmRemoved &&
+      !me.handle &&
+      Boolean(store.game?.name) &&
+      Array.isArray(campaign.members) &&
+      campaign.members.length === 1 &&
+      !campaign.members[0]?.handle &&
+      campaign.members[0]?.name === store.game.name;
     const alreadyMember =
       !iAmRemoved &&
-      (campaign.members || []).some(
-        (m) => me.handle && handleKey(m.handle) === handleKey(me.handle),
-      );
+      (isLocalSoloCreator ||
+        (campaign.members || []).some(
+          (m) => me.handle && handleKey(m.handle) === handleKey(me.handle),
+        ));
     const posts = feedPosts(campaign);
     const quotable = newestQuotablePost(campaign);
     const baseUrl =
@@ -764,6 +791,8 @@ export function mount(rootEl, ctx) {
     const relayConfig = nostrModel.loadRelays();
     const share = shareLinkFor(campaign, baseUrl, relayConfig.relays);
     const stack = memberStackSummary(campaign.members || [], 4);
+    const showInvitePrompt = shouldShowInvitePrompt(campaign);
+    const showTemplates = shouldShowTemplatesSection(campaign);
 
     const links = game.links || {};
     const gameLinks = [
@@ -777,7 +806,7 @@ export function mount(rootEl, ctx) {
     const avatarStackHtml = stack.visible
       .map(
         (m) =>
-          `<span class="avatar avatar-sm avatar-h${avatarHue(m.handle)}" title="${esc(m.name || m.handle)}">${esc(initials(m.name || m.handle))}</span>`,
+          `<span class="avatar avatar-sm avatar-h${avatarHue(m.handle || m.name)}" title="${esc(m.name || m.handle)}">${esc(initials(m.name || m.handle))}</span>`,
       )
       .join('') +
       (stack.overflow > 0 ? `<span class="avatar avatar-sm avatar-overflow">+${stack.overflow}</span>` : '');
@@ -828,7 +857,8 @@ export function mount(rootEl, ctx) {
 
     const canAdopt = canAdoptTemplate(campaign, me);
     const templateChips = runningTemplateChips(campaign, allKnownFormats(), me);
-    const templatesHtml = `<section class="ring-templates" aria-label="Ring templates">
+    const templatesHtml = showTemplates
+      ? `<section class="ring-templates" aria-label="Ring templates">
           <div class="ring-templates-head">
             <h3 class="section-eyebrow">Templates</h3>
             ${canAdopt ? '<button type="button" id="ring-adopt-template-btn" class="btn-sm">Browse &amp; adopt template</button>' : ''}
@@ -845,10 +875,23 @@ export function mount(rootEl, ctx) {
                   .join('')}</ul>`
               : '<p class="ring-templates-empty">No templates running yet.</p>'
           }
-        </section>`;
+        </section>`
+      : '';
+
+    const invitePromptHtml = showInvitePrompt
+      ? `<aside class="ring-invite-prompt" id="ring-invite-prompt" aria-label="Invite other devs">
+          <p class="ring-invite-prompt-copy"><strong>Your ring is live.</strong> It needs other devs.</p>
+          <div class="ring-invite-prompt-row">
+            <input type="text" readonly class="ring-invite-prompt-input" id="ring-invite-prompt-link" value="${esc(share.url)}" aria-label="Ring invite link">
+            <button type="button" id="ring-invite-prompt-copy" class="primary btn-sm">${NAV_ICONS.copy}<span>Copy invite link</span></button>
+          </div>
+          ${share.note ? `<p class="ring-share-note">${esc(share.note)}</p>` : ''}
+        </aside>`
+      : '';
 
     rootEl.innerHTML = `
-      <section class="campaign-page">
+      <section class="campaign-page ${RING_COLUMN_CLASS}">
+        ${invitePromptHtml}
         <header class="cabal-page-header ring-header">
           <div class="cabal-page-header-main">
             <div class="ring-title-row">
@@ -931,9 +974,9 @@ export function mount(rootEl, ctx) {
                 ? `<ul class="ring-list">${(campaign.members || [])
                     .map(
                       (m) => `<li class="ring-member">
-                        <span class="avatar avatar-h${avatarHue(m.handle)}">${esc(initials(m.name || m.handle))}</span>
+                        <span class="avatar avatar-h${avatarHue(m.handle || m.name)}">${esc(initials(m.name || m.handle))}</span>
                         <span class="member-name">${esc(m.name)}</span>
-                        <span class="member-handle">${esc(m.handle)}</span>
+                        ${m.handle ? `<span class="member-handle">${esc(m.handle)}</span>` : ''}
                         ${canRemoveMember(campaign, me, m.handle) ? `<button type="button" class="member-remove btn-sm" data-remove-member="${esc(m.handle)}">Remove</button>` : ''}
                       </li>`,
                     )
@@ -1006,23 +1049,31 @@ export function mount(rootEl, ctx) {
       ctx.onTabChange(activeTab);
     }
 
-    // Wire header Share icon-button & Members-tab Copy button -> clipboard + toast
+    // Wire header Share icon-button, V63 pinned invite card, & Members-tab Copy button -> clipboard + toast
     const doc = rootEl.ownerDocument;
     const headerShareBtn = rootEl.querySelector('#ring-header-share');
     if (headerShareBtn) {
       headerShareBtn.addEventListener('click', () => copyShareUrl(share.url, doc));
     }
-    const copyBtn = rootEl.querySelector('#campaign-share-copy');
-    if (copyBtn) {
-      copyBtn.addEventListener('click', async () => {
+    const wireCopyBtn = (btn) => {
+      if (!btn) return;
+      btn.addEventListener('click', async () => {
         const ok = await copyShareUrl(share.url, doc);
-        const span = copyBtn.querySelector('span');
+        const span = btn.querySelector('span');
         if (ok && span) {
           span.textContent = 'Copied!';
           setTimeout(() => {
             span.textContent = 'Copy invite link';
           }, 2000);
         }
+      });
+    };
+    wireCopyBtn(rootEl.querySelector('#ring-invite-prompt-copy'));
+    wireCopyBtn(rootEl.querySelector('#campaign-share-copy'));
+    const inviteLinkInput = rootEl.querySelector('#ring-invite-prompt-link');
+    if (inviteLinkInput) {
+      inviteLinkInput.addEventListener('focus', () => {
+        if (typeof inviteLinkInput.select === 'function') inviteLinkInput.select();
       });
     }
 
@@ -1077,7 +1128,7 @@ export function mount(rootEl, ctx) {
           return;
         }
         try {
-          const updated = addPostToCampaign(campaign, {
+          let updated = addPostToCampaign(campaign, {
             url,
             platform,
             author,
@@ -1085,6 +1136,22 @@ export function mount(rootEl, ctx) {
             ...(text ? { text } : {}),
             kind,
           });
+          // V62: if the solo creator skipped handle during ring creation,
+          // save their handle once here and prefill it everywhere afterward.
+          if (!me.handle && author) {
+            const nextMe = { name: me.name || game.name, handle: author };
+            if (typeof store.saveMe === 'function') {
+              store.saveMe(nextMe);
+              store.me = nextMe;
+            }
+            if (Array.isArray(updated.members) && updated.members.length === 1 && !updated.members[0].handle) {
+              updated = {
+                ...updated,
+                createdBy: updated.createdBy || author,
+                members: [{ ...updated.members[0], handle: author }],
+              };
+            }
+          }
           syncCampaignToStore(store, campaign, updated);
           render();
         } catch (err) {
