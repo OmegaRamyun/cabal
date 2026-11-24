@@ -184,9 +184,14 @@ export function buildMergedCreation(input = {}) {
       : [];
 
   const game = { name: gameName, links, tags };
+  // Handle-less creator (V62 + smoke fix): still record me, with an empty
+  // handle, so the creator is recognised as their own ring's member
+  // (invite-landing's unclaimed-seed check) instead of being routed to
+  // join their own ring as a second member. The handle is backfilled on
+  // their first post, as before.
   const me = handle
     ? { name: (input.existingMe && input.existingMe.name) || gameName, handle }
-    : input.existingMe || null;
+    : input.existingMe || { name: gameName, handle: '' };
   const creator = {
     name: (me && me.name) || gameName,
     handle,

@@ -12,7 +12,7 @@ Base: `376b579` (v0.2.34)
   - **Tags preserved** as a visible optional comma-separated field on the creation form and displayed on the ring page header (per Cade's Nov 23 ruling).
   - Store links (Steam / itch.io) and first post (URL + platform + text) live in an optional collapsible section ("add now or later on the ring page").
   - Extended `parsePostUrl` in `src/campaign.mjs` to extract handles from Bluesky (`/profile/<handle>/post/<id>`), Threads (`/@<handle>/post/<id>`), and TikTok (`/@<handle>/video/<id>`) in addition to X and Reddit. Pasting a post URL infers the platform and autofills the handle.
-  - **Never fabricates a handle**: removed the `'@' + game.name...` fallback that produced `@testgame`. Skipping the handle stores `members[0].handle = ""` and `store.me = null` until the user provides a handle once (e.g. when adding their first post on the ring page, which then saves `store.me` and backfills `members[0].handle` so it prefills everywhere).
+  - **Never fabricates a handle**: removed the `'@' + game.name...` fallback that produced `@testgame`. Skipping the handle stores `members[0].handle = ""` and `store.me = {name, handle: ""}` (corrected by the smoke re-test: `store.me = null` left the creator a stranger to their own ring — V64 routed them to the invite landing and joining appended a second member, so the V63 1-member invite prompt never showed. The empty-handle `me` is recognised by `isInviteLanding`'s unclaimed-seed check; the handle itself is still backfilled on the first post, as before).
   - Exported pure helpers: `validateGameSetup`, `normalizeHandle`, `validateRingCreation`, `buildMergedCreation`.
 
 - **V63 — Post-creation invite prompt & ring-page cleanup (`src/campaign-page.mjs`):**

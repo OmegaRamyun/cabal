@@ -320,7 +320,10 @@ function renderCampaign(view, id, opts = {}) {
     }
     // V64: a ring the viewer hasn't joined gets the dedicated invite
     // landing, not the ring page. Removed viewers keep today's behaviour.
-    if (inviteLanding.isInviteLanding(campaign, store.me?.handle)) {
+    // Pass the viewer's name too: a handle-less creator (me.handle === '')
+    // is recognised by their unclaimed seed member, not routed to join
+    // their own ring.
+    if (inviteLanding.isInviteLanding(campaign, store.me?.handle, store.me?.name)) {
       hideDemoBanner();
       view.textContent = '';
       inviteLanding.mount(view, {

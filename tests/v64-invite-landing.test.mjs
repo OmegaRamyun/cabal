@@ -22,6 +22,33 @@ test('removed viewer is not shown the landing', () => {
   assert.equal(isInviteLanding(ring(), '@gone'), false);
 });
 
+test('handle-less creator is recognised by their unclaimed seed member (smoke fix)', () => {
+  const seed = () => ({
+    id: 'cmp_seed01', title: 'Smoke Ring', game: { name: 'Smoke Game' },
+    members: [{ name: 'Smoke Game', handle: '' }], posts: [],
+  });
+  // Creator: me = {name: 'Smoke Game', handle: ''} — no landing.
+  assert.equal(isInviteLanding(seed(), '', 'Smoke Game'), false);
+  // Stranger with no me record at all — landing.
+  assert.equal(isInviteLanding(seed(), undefined, undefined), true);
+  // Handle-less viewer with a different name — landing (not the creator).
+  assert.equal(isInviteLanding(seed(), '', 'Other Game'), true);
+  // Claimed seed (handle filled in) — an empty-handle viewer is a stranger.
+  const claimed = seed();
+  claimed.members[0].handle = '@smokedev';
+  assert.equal(isInviteLanding(claimed, '', 'Smoke Game'), true);
+});
+
+test('invite card shows the ring title, not the game name twice (smoke fix)', () => {
+  const card = renderInviteCard({
+    id: 'cmp_seed01', title: 'Smoke Ring', game: { name: 'Smoke Game' },
+    members: [{ name: 'Smoke Game', handle: '' }], posts: [],
+  }, {});
+  assert.ok(card.includes('<h2 class="invite-title">Smoke Ring</h2>'));
+  assert.ok(card.includes('<p class="invite-game">Smoke Game</p>'), 'game name appears as the game line, not the title');
+  assert.ok(!card.includes('<h2 class="invite-title">Smoke Game</h2>'));
+});
+
 test('join needs a name; handle optional and derived', () => {
   assert.equal(validateJoin(ring(), { name: '  ', handle: '@x' }).ok, false);
   const v = validateJoin(ring(), { name: 'Bob Ross' });

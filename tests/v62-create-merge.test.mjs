@@ -125,7 +125,9 @@ describe('V62 — merged creation (2 required fields), tags preserved, handle ne
     assert.equal(res.game.name, 'Test Game');
     assert.deepEqual(res.game.links, {});
     assert.deepEqual(res.game.tags, []);
-    assert.equal(res.me, null, 'must not fabricate a me object when handle is skipped');
+    // Smoke fix: me IS recorded (so the creator is recognised as their own
+    // ring's member), but with an empty handle — never a fabricated one.
+    assert.deepEqual(res.me, { name: 'Test Game', handle: '' });
     assert.equal(res.campaign.members.length, 1);
     assert.equal(res.campaign.members[0].name, 'Test Game');
     assert.equal(res.campaign.members[0].handle, '', 'handle must remain empty, never @testgame');

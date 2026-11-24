@@ -30,10 +30,19 @@ function esc(s) {
 const lc = (s) => String(s ?? '').trim().replace(/^@+/, '').toLowerCase();
 
 /** True when the viewer should see the invite card: a real ring they are not in (and were not removed from). */
-export function isInviteLanding(campaign, viewerHandle) {
+export function isInviteLanding(campaign, viewerHandle, viewerName) {
   if (!campaign || typeof campaign !== 'object' || !campaign.id) return false;
   if (viewerHandle && isMember(campaign, viewerHandle)) return false;
   if (viewerHandle && isRemoved(campaign, viewerHandle)) return false;
+  // Handle-less creator (V62 + smoke fix): creation records
+  // me = {name, handle: ''} and the seed member members[0] carries the
+  // same name with an empty handle. A stranger has no me record at all
+  // (viewerHandle undefined), so this only matches the creator of an
+  // unclaimed-seed ring — never a stranger, never a claimed one.
+  if (viewerHandle === '' && viewerName) {
+    const seed = (campaign.members || [])[0];
+    if (seed && !seed.handle && seed.name === viewerName) return false;
+  }
   return true;
 }
 
@@ -99,7 +108,7 @@ export function renderInviteCard(campaign, me = {}) {
   const names = members.slice(0, 3).map((m) => esc(m.handle || m.name)).join(', ');
   return `<section class="invite-landing">
     <p class="section-eyebrow">You&rsquo;re invited</p>
-    <h2 class="invite-title">${esc(campaign.name || campaign.game?.name || 'Ring')}</h2>
+    <h2 class="invite-title">${esc(campaign.title || campaign.name || campaign.game?.name || 'Ring')}</h2>
     ${campaign.game?.name ? `<p class="invite-game">${esc(campaign.game.name)}</p>` : ''}
     ${members.length ? `<div class="invite-faces">${faces}${more}</div><p class="invite-members">${names}</p>` : ''}
     <p class="view-lede">${esc(INVITE_COPY)}</p>
