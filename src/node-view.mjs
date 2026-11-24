@@ -381,7 +381,7 @@ export function layoutWithLabels(graph, opts = {}) {
   const cy = height * 0.5;
   const GOLDEN = Math.PI * (3 - Math.sqrt(5));
 
-  const sorted = [...nodes].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const sorted = nodes.toSorted((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const simNodes = sorted.map((node, i) => {
     const r = resolveRadius(node, opts.radiusFor);
     const lb = labelBoxFor(node, { x: 0, y: 0 }, opts);

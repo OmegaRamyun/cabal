@@ -379,7 +379,7 @@ export function formatsForDiscovery(formats, { usage, rings } = {}) {
   const members = new Map(list.map((f) => [f.id, ringMemberTotal(f.id, rings)]));
   const used = (f) => (u ? (u.get(lc(f.id))?.count ?? 0) : 0);
   const assists = (f) => (u ? (u.get(lc(f.id))?.assists ?? 0) : 0);
-  return [...list].sort(
+  return list.toSorted(
     (a, b) =>
       used(b) - used(a) ||
       assists(b) - assists(a) ||
@@ -443,7 +443,7 @@ export function mount(rootEl, ctx = {}) {
   if (used && typeof ctx.usageNote === "string" && ctx.usageNote) {
     headerMain.appendChild(el(doc, "p", ctx.usageNote, "format-usage-note relay-status-chip"));
   }
-  if (f.tags.length) headerMain.appendChild(el(doc, "p", f.tags.join(" · "), "format-tags"));
+  if (f.tags.length) headerMain.appendChild(el(doc, "p", f.tags.join(", "), "format-tags"));
   header.appendChild(headerMain);
 
   const actions = el(doc, "div", null, "cabal-page-header-actions");

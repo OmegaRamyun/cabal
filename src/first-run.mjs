@@ -6,7 +6,7 @@
 
 export const FIRST_RUN_COPY = Object.freeze({
   sentence:
-    "Cabal — small rings of indie devs boost each other’s posts, in their own words. No accounts.",
+    "Cabal: small rings of indie devs boost each other’s posts, in their own words. No accounts.",
   startRing: "Start a ring",
   haveInvite: "I have an invite link",
   seeDemo: "See a demo ring",

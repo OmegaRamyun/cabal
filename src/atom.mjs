@@ -105,8 +105,7 @@ export function campaignToEntry(campaign, { linkFor, now } = {}) {
 export function buildFeed(campaigns, { linkFor, updated, now } = {}) {
   const list = (Array.isArray(campaigns) ? campaigns : [])
     .map((c) => normalizeCampaign(c))
-    .slice()
-    .sort((a, b) => String(entryUpdated(b)).localeCompare(String(entryUpdated(a))));
+    .toSorted((a, b) => String(entryUpdated(b)).localeCompare(String(entryUpdated(a))));
   const feedUpdated =
     updated || (list.length ? entryUpdated(list[0]) : '1970-01-01T00:00:00Z');
   const entries = list
