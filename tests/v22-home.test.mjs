@@ -55,10 +55,11 @@ test('validateGameSetup: name required', () => {
   assert.ok(errors.some((e) => /name/i.test(e)));
 });
 
-test('validateGameSetup: at least one store link required', () => {
-  const errors = validateGameSetup({ name: 'G', links: {} });
-  assert.ok(errors.some((e) => /store link/i.test(e)));
-  // itch alone is enough
+test('validateGameSetup: store link optional (V62 — merged creation)', () => {
+  // V62 dropped the store-link requirement: a game name alone is enough;
+  // store links are optional, add-later fields.
+  assert.deepEqual(validateGameSetup({ name: 'G', links: {} }), []);
+  // itch alone is still fine
   assert.deepEqual(
     validateGameSetup({ name: 'G', links: { itch: 'https://g.itch.io/g' } }),
     [],

@@ -102,11 +102,11 @@ test("normalizeCampaign: clips an over-long note to 280", () => {
 
 // --- validate (both shapes) ---
 
-test("validateCampaign: both shapes valid; neither anchor nor posts invalid; post/assist rules", () => {
+test("validateCampaign: both shapes valid; a ring with no posts yet is valid (V62); post/assist rules", () => {
   assert.deepEqual(validateCampaign(legacy()), []);
   const v2 = normalizeCampaign(legacy());
   assert.deepEqual(validateCampaign(v2), []);
-  assert.ok(validateCampaign({ ...v2, posts: [], anchorPost: undefined }).length > 0);
+  assert.deepEqual(validateCampaign({ ...v2, posts: [], anchorPost: undefined }), []);
   const bad = (patch) => validateCampaign({ ...v2, posts: [{ ...v2.posts[0], ...patch }] });
   assert.ok(bad({ id: "" }).some((e) => /id/.test(e)));
   assert.ok(bad({ author: "" }).some((e) => /author/.test(e)));

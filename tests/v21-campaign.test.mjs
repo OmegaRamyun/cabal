@@ -51,13 +51,10 @@ test("validateCampaign: each missing field is reported", () => {
   const cases = [
     ["game.name", { ...good, game: { ...good.game, name: "" } }],
     ["game.name (blank)", { ...good, game: { ...good.game, name: "   " } }],
-    ["game.links (neither steam nor itch)", { ...good, game: { ...good.game, links: { x: "https://x.com/brass" } } }],
-    ["game.links (empty)", { ...good, game: { ...good.game, links: {} } }],
     ["posts[0].url", { ...good, posts: [{ ...good.posts[0], url: "" }] }],
     ["posts[0].url (not http)", { ...good, posts: [{ ...good.posts[0], url: "ftp://x" }] }],
     ["posts[0].author", { ...good, posts: [{ ...good.posts[0], author: "" }] }],
     ["posts[0].platform", { ...good, posts: [{ ...good.posts[0], platform: "" }] }],
-    ["no posts and no anchorPost", { ...good, posts: [], anchorPost: undefined }],
     ["legacy anchorPost.url", { ...good, posts: undefined, anchorPost: { ...good.anchorPost, url: "" } }],
     ["legacy anchorPost.text", { ...good, posts: undefined, anchorPost: { ...good.anchorPost, text: "" } }],
     ["legacy anchorPost.author", { ...good, posts: undefined, anchorPost: { ...good.anchorPost, author: "" } }],
@@ -77,7 +74,8 @@ test("validateCampaign: each missing field is reported", () => {
 });
 
 test("createCampaign: throws on invalid input", () => {
-  assert.throws(() => createCampaign({ game: { ...game, links: {} }, title: "x", anchorPost, creator }), /game\.links/);
+  // V62: game.links is optional now, so an empty links object no longer throws.
+  assert.doesNotThrow(() => createCampaign({ game: { ...game, links: {} }, title: "x", anchorPost, creator, window: null }));
   assert.throws(() => createCampaign({ game, title: "x", anchorPost, window: null }), /members/);
 });
 

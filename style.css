@@ -3511,3 +3511,57 @@ body.has-ringless-cta {
 #view {
   padding-bottom: 1rem;
 }
+
+/* ---- V63 centered ring page + invite prompt (coordinator wiring) ---- */
+.campaign-page--centered {
+  max-width: 48rem;
+  margin: 0 auto;
+}
+
+@media (min-width: 1024px) {
+  main.app-main:has(.campaign-page--centered):has(#campaign-extras[hidden]) {
+    display: block;
+    overflow-y: auto;
+    padding: 1.25rem;
+  }
+
+  main.app-main:has(.campaign-page--centered):has(#campaign-extras[hidden]) > #view {
+    height: auto;
+    overflow: visible;
+    padding: 0;
+  }
+}
+
+.ring-invite-prompt {
+  border: 1px solid var(--cabal-border-strong, var(--cabal-hairline-strong));
+  border-radius: var(--cabal-radius-md, 0.5rem);
+  padding: 0.9rem 1rem;
+  margin-bottom: 1rem;
+  background: var(--cabal-surface-elevated, rgba(255, 255, 255, 0.03));
+}
+
+.ring-invite-prompt-copy {
+  margin: 0 0 0.6rem;
+}
+
+.ring-invite-prompt-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ring-invite-prompt-input {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.ring-explainer-line {
+  margin: 0 0 0.75rem;
+  color: var(--cabal-muted);
+  font-size: 0.9rem;
+}
+
+.create-optional-details {
+  margin: 0.5rem 0;
+}
