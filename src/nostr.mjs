@@ -398,7 +398,7 @@ const PLATFORMS = ["x", "bluesky", "threads", "reddit", "instagram", "tiktok", "
 const isHttp = (u) => { try { return /^https?:$/.test(new URL(u).protocol); } catch { return false; } };
 const str = (v, max) => (typeof v === "string" ? v.slice(0, max) : undefined);
 const iso = (v) => (typeof v === "string" && !Number.isNaN(Date.parse(v)) ? v : undefined);
-const cloneCampaign = (c) => JSON.parse(JSON.stringify(c));
+const cloneCampaign = (c) => structuredClone(c);
 const handleKey = (h) => String(h ?? "").trim().toLowerCase();
 
 function cleanPost(d, fallbackCreated) {
@@ -871,7 +871,7 @@ export function mount(rootEl, ctx = {}) {
       const access = meRemoved ? "removed (read-only)" : (writable ? "write access via invite link" : "read-only");
       const pubState = c.nostr?.createdAt ? `last synced ${new Date(c.nostr.createdAt * 1000).toISOString()}` : "not published yet";
       const memberHandles = (c.members ?? []).map((m) => m.handle).filter(Boolean).join(", ") || "none";
-      const removedText = removed.length ? ` · Removed: ${removed.map((r) => r.handle).join(", ")}` : "";
+      const removedText = removed.length ? `. Removed: ${removed.map((r) => r.handle).join(", ")}` : "";
       ul.append(el("li", {}, `${c.title || c.id} — ${access}; ${pubState}. Members: ${memberHandles}${removedText}`));
     }
     box.append(ul);

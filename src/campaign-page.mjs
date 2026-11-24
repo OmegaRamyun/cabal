@@ -81,7 +81,7 @@ export function shouldShowTemplatesSection(campaign) {
 // ---------------------------------------------------------------- pure ---
 
 function clone(v) {
-  return v === undefined ? undefined : JSON.parse(JSON.stringify(v));
+  return v === undefined ? undefined : structuredClone(v);
 }
 
 function toTimestamp(iso) {

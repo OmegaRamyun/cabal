@@ -32,7 +32,7 @@ const lc = (v) => String(v ?? "").trim().toLowerCase();
 const COMPOSER_PLATFORMS = new Set(["x", "bluesky"]);
 
 function clone(v) {
-  return v === undefined ? undefined : JSON.parse(JSON.stringify(v));
+  return v === undefined ? undefined : structuredClone(v);
 }
 
 function randomId(prefix = "cmp") {
