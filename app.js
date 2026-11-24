@@ -287,7 +287,7 @@ function renderSyncPanel(campaign) {
   slot.hidden = true;
   if (!campaign) return;
   const campaignId = campaign.id;
-  const original = JSON.parse(JSON.stringify(campaign));
+  const original = structuredClone(campaign);
   const view = document.querySelector('#view');
   const details = document.createElement('details');
   details.className = 'ring-sync-sheet';
