@@ -312,6 +312,12 @@ function renderSyncPanel(campaign) {
     campaign,
     getCampaigns: () => store.campaigns,
     me: store.me,
+    // V77 integration: relay add/remove/opt-in re-renders the campaign page
+    // (sync:false keeps the panel) so the Sync chip stops saying "Local
+    // only" the moment relays are configured.
+    onRelaysChanged: () => {
+      if (view) renderCampaign(view, campaignId, { sync: false });
+    },
     onMerged: (list) => {
       store.saveCampaigns(mergeSyncedIntoStore(store.campaigns, list, original));
       // Re-render the page only ({ sync: false }) so the panel keeps its

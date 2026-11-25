@@ -896,7 +896,7 @@ export function mount(rootEl, ctx) {
           <div class="cabal-page-header-main">
             <div class="ring-title-row">
               <h2>${esc(campaign.title)}</h2>
-              ${campaign.demo ? '<span class="demo-badge">DEMO</span>' : ''}
+              ${campaign.demo ? '<span class="demo-badge">Demo</span>' : ''}
             </div>
             <div class="ring-subtitle-row">
               <span class="ring-game-name">${esc(game.name)}</span>
@@ -999,14 +999,14 @@ export function mount(rootEl, ctx) {
                 ? ''
                 : `<h3 class="section-eyebrow">Join this ring</h3>
             <p class="view-lede">No account needed. Add your name and handle to join this ring.</p>
-            <form id="ring-join-form" class="cabal-form">
+            <form id="ring-join-form" class="cabal-form" novalidate>
               <p class="form-error" id="join-errors" hidden></p>
               <div class="cabal-form-row">
                 <label>Your name
-                  <input type="text" name="name" value="${esc(me.name || '')}" required autocomplete="off">
+                  <input type="text" name="name" value="${esc(me.name || '')}" autocomplete="off">
                 </label>
                 <label>Your handle
-                  <input type="text" name="handle" value="${esc(me.handle || '')}" required autocomplete="off" placeholder="@yourhandle">
+                  <input type="text" name="handle" value="${esc(me.handle || '')}" autocomplete="off" placeholder="@yourhandle">
                 </label>
               </div>
               <div class="cabal-form-footer">
@@ -1295,7 +1295,7 @@ export function mount(rootEl, ctx) {
                     </span>
                     <span class="adopt-picker-row-badges">
                       ${item.isOwn ? '<span class="status-pill">Yours</span>' : ''}
-                      ${item.demo ? '<span class="demo-badge">DEMO</span>' : ''}
+                      ${item.demo ? '<span class="demo-badge">Demo</span>' : ''}
                       ${item.alreadyRunning ? '<span class="status-pill status-pill--active">Running</span>' : ''}
                     </span>
                   </button>

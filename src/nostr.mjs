@@ -932,12 +932,12 @@ export function mount(rootEl, ctx = {}) {
     const s = relayStatus(configured, relays, statusMap);
     const box = el("section", { class: "nostr-relays" }, el("h3", {}, "Relays"), el("p", { class: `relay-${s.kind}` }, s.label));
     const ul = el("ul", {});
-    for (const r of relays) ul.append(el("li", {}, `${r} — ${statusMap[r] ?? "not tried yet"} `, el("button", { type: "button", onclick: () => { removeRelay(r, ctx.storage); render(); } }, "Remove")));
+    for (const r of relays) ul.append(el("li", {}, `${r} — ${statusMap[r] ?? "not tried yet"} `, el("button", { type: "button", onclick: () => { removeRelay(r, ctx.storage); ctx.onRelaysChanged?.(); render(); } }, "Remove")));
     box.append(ul);
-    if (!configured) box.append(el("button", { type: "button", onclick: () => { useDefaultRelays(ctx.storage); render(); } }, "Use the suggested relays"));
+    if (!configured) box.append(el("button", { type: "button", onclick: () => { useDefaultRelays(ctx.storage); ctx.onRelaysChanged?.(); render(); } }, "Use the suggested relays"));
     const inp = el("input", { type: "text", placeholder: "wss://relay.example.com" });
     const err = el("p", { class: "warn" });
-    box.append(inp, el("button", { type: "button", onclick: () => { const r = addRelay(inp.value, ctx.storage); if (!r.ok) err.textContent = r.error; else render(); } }, "Add relay"), err);
+    box.append(inp, el("button", { type: "button", onclick: () => { const r = addRelay(inp.value, ctx.storage); if (!r.ok) err.textContent = r.error; else { ctx.onRelaysChanged?.(); render(); } } }, "Add relay"), err);
     return box;
   }
 

@@ -532,7 +532,7 @@ function esc(s) {
 }
 
 function demoBadge(campaign) {
-  return campaign.demo ? '<span class="demo-badge">DEMO</span>' : '';
+  return campaign.demo ? '<span class="demo-badge">Demo</span>' : '';
 }
 
 function platformLabel(platform) {
@@ -555,7 +555,7 @@ function ringRowHtml(campaign, me) {
     <div class="ring-row-main">
       <div class="ring-row-title-line">
         <a class="ring-row-title" href="#/campaign/${encodeURIComponent(row.id)}" data-open-campaign="${esc(row.id)}">${esc(row.title)}</a>
-        ${row.demo ? '<span class="demo-badge">DEMO</span>' : ''}
+        ${row.demo ? '<span class="demo-badge">Demo</span>' : ''}
       </div>
       <div class="ring-row-meta">${esc(row.memberLabel)}${row.activity ? ` &middot; Active ${esc(row.activity)}` : ''}</div>
     </div>
