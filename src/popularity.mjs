@@ -3,7 +3,7 @@
 // relay-query helper consuming src/nostr.mjs's relay client (never edits it).
 // No server, no click tracking, no X API, no per-user scores, no assist totals shown.
 
-import { KIND_CAMPAIGN, KIND_NOTE } from "./nostr.mjs";
+import { KIND_CAMPAIGN, KIND_APP_RECORD, KIND_LEGACY_NOTE } from "./nostr.mjs";
 
 export const FORMAT_TAG_PREFIX = "cabal:format:";
 export const DEFAULT_TIMEOUT_MS = 5000;
@@ -63,8 +63,10 @@ function lookupUsage(usageMap, id) {
  *  - Campaign events (kind 30078): read formatId from content JSON when present,
  *    else from ["t", "cabal:format:<id>"]. Dedupe rings by pubkey (not event id).
  *    Malformed non-empty content is ignored.
- *  - Note events (kind 1): read tag only. Count as an assist for that format
- *    (never attributed to a ring — assists are not rings).
+ *  - App-record events (kind 78; legacy kind 1 before V79): read tag only.
+ *    Count as an assist for that format (never attributed to a ring —
+ *    assists are not rings). Legacy kind 1 events still count so rings
+ *    published before the V79 migration keep their history.
  *  - Unknown kinds, missing format refs, and malformed inputs are ignored.
  *    Never throws.
  */
@@ -131,7 +133,7 @@ export function countFormatUsage(events) {
       for (const formatId of ids) {
         ensure(formatId).rings.add(pubkey);
       }
-    } else if (ev.kind === KIND_NOTE) {
+    } else if (ev.kind === KIND_APP_RECORD || ev.kind === KIND_LEGACY_NOTE) {
       const tagIds = extractTagFormatIds(ev.tags);
       for (const formatId of tagIds) {
         ensure(formatId).assists += 1;
@@ -211,7 +213,9 @@ export function filtersForFormat(formatId) {
   const id = cleanId(formatId);
   if (!id) return null;
   return {
-    kinds: [KIND_NOTE, KIND_CAMPAIGN],
+    // V79: query the new kind 78 app records AND legacy kind 1 (back-compat
+    // counting for rings published before the migration) plus campaign docs.
+    kinds: [KIND_APP_RECORD, KIND_LEGACY_NOTE, KIND_CAMPAIGN],
     "#t": [`${FORMAT_TAG_PREFIX}${id}`],
   };
 }

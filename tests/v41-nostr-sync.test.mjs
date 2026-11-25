@@ -309,7 +309,7 @@ test("publishCampaign signs with campaign key, filters by handle when given, and
   ];
   await N.publishCampaign(client, c, { handle: "@a" });
   assert.equal(published.filter((e) => e.kind === 30078).length, 1);
-  assert.equal(published.filter((e) => e.kind === 1).length, 2); // @a's post + @a's assist
+  assert.equal(published.filter((e) => e.kind === 78).length, 2); // @a's post + @a's assist (V79: kind 78, was kind 1)
   for (const e of published) {
     assert.equal(e.pubkey, campKP.pubkey);
     assert.equal(await N.verifyEvent(e), true);

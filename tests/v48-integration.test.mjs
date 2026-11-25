@@ -6,7 +6,7 @@
 //   and assists as tiebreak (toUsageDetail).
 // - Nostr event builders tag a formatId-carrying campaign with
 //   ["t", "cabal:format:<id>"] on campaign/post/Enscryption events, and
-//   omit the tag otherwise (V46 counting depends on the tag for kind 1).
+//   omit the tag otherwise (V46 counting depends on the tag for kind 78).
 // - normalizeCampaign keeps formatId (preselected creation sets it after
 //   createCampaign, which builds a fresh object and drops unknown fields).
 // DOM behaviour (route mounts, panel on ToonSouls, relay query refresh):
@@ -117,7 +117,7 @@ describe('V48 format tag on Nostr events', () => {
     const plain = campaignEvent(makeRing());
     assert.ok(!plain.tags.some((t) => t[0] === 't' && String(t[1]).startsWith('cabal:format:')));
   });
-  test('postEvent and encryptionEvent carry the format tag (kind 1 has no formatId in content)', () => {
+  test('postEvent and encryptionEvent carry the format tag (kind 78 has no formatId in content)', () => {
     const ring = { ...makeRing(), formatId: FMT };
     const post = { id: 'pst_abcdef12', author: '@alice', platform: 'x', url: 'https://x.com/a/status/1', text: 'hi', createdAt: new Date().toISOString(), assists: [] };
     const postEv = postEvent(ring, post);

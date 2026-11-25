@@ -17,7 +17,22 @@ import {
 } from "./nostr-schnorr.mjs";
 
 export const KIND_CAMPAIGN = 30078;
-export const KIND_NOTE = 1;
+// V79 — NIP-78 app-record kind for Cabal posts/assists (was kind 1, the
+// social-note kind, which carried JSON blobs off-label). NIP-78 (amended
+// 2026-09-03, PR #2458): kind 78 is the normal event "for when the app needs
+// to store and query multiple events of the same type. Apps should use some
+// unique tag (even a `d` tag) for grouping these events together." The
+// campaign doc stays kind 30078. Relays SHOULD require NIP-42 AUTH before
+// accepting/serving kinds 78 and 30078, and SHOULD only serve them to the
+// authenticated owner — the campaign keypair, which every ring member holds.
+export const KIND_APP_RECORD = 78;
+// V79 — legacy kind 1 (social note). DECODE ONLY, never construct: rings
+// published before this round wrote posts/assists as kind 1, and stranding
+// them would lose history. No code path may build a kind 1 event.
+export const KIND_LEGACY_NOTE = 1;
+// V79 — NIP-42 AUTH event kind (ephemeral; tags ["relay", url] +
+// ["challenge", challenge]).
+export const KIND_AUTH = 22242;
 export const STORAGE_KEYS = Object.freeze({
   relays: "cabal.v2.relays",
 });
@@ -396,13 +411,13 @@ export function adoptionEvent(campaign, { createdAt } = {}) {
   return campaignEvent(campaign, { createdAt: ts });
 }
 
-/** Post event: kind 1, `a` -> campaign. Content = post JSON (no assists, no key). */
+/** Post event: kind 78 (NIP-78 app record; was kind 1 before V79), `a` -> campaign. Content = post JSON (no assists, no key). */
 export function postEvent(campaign, post, { campaignPubkey: pkOpt, createdAt } = {}) {
   const pk = pkOpt ?? campaignPubkey(campaign);
   if (!pk) throw new Error("postEvent needs the campaign's pubkey");
   const { assists, ...rest } = stripLocal(post);
   return {
-    kind: KIND_NOTE,
+    kind: KIND_APP_RECORD,
     created_at: createdAt ?? nowSec(),
     tags: withFormatTags([["a", campaignAddress(pk, campaign.id)], ["t", "cabal"], ["cabal-post", post.id]], campaign),
     content: JSON.stringify(rest),
@@ -410,7 +425,8 @@ export function postEvent(campaign, post, { campaignPubkey: pkOpt, createdAt } =
 }
 
 /**
- * Enscryption event: kind 1, `e` -> post event (when its id is known), `a` -> campaign.
+ * Enscryption event: kind 78 (NIP-78 app record; was kind 1 before V79),
+ * `e` -> post event (when its id is known), `a` -> campaign.
  * Carries `cabal-post` = the post's id so merge matches even when the post only
  * lived inside the campaign JSON.
  */
@@ -424,7 +440,7 @@ export function encryptionEvent(campaign, post, assist, { campaignPubkey: pkOpt,
   for (const ft of formatTagsFor(campaign)) tags.push(ft);
   const { handle, note, url, quoteText, status, contributedAt } = stripLocal(assist);
   return {
-    kind: KIND_NOTE, created_at: createdAt ?? nowSec(), tags,
+    kind: KIND_APP_RECORD, created_at: createdAt ?? nowSec(), tags,
     content: JSON.stringify({ handle, status, contributedAt, ...(note != null && { note }), ...(url && { url }), ...(quoteText && { quoteText }) }),
   };
 }
@@ -441,7 +457,12 @@ export function decodeEvent(ev) {
     const data = parseJson(ev.content);
     return data ? { type: "campaign", campaignId: d.slice(6), campaignPubkey: ev.pubkey, data } : null;
   }
-  if (ev.kind === KIND_NOTE) {
+  // V79: kind 78 post/assist events AND legacy kind 1 post/assist events
+  // (back-compat read for rings published before this round). Publish ONLY
+  // kind 78 — see postEvent/encryptionEvent. A legacy event merges exactly
+  // like a new one; the campaign doc (kind 30078) also carries the posts,
+  // so nothing is lost even though filtersForCampaign only queries kind 78.
+  if (ev.kind === KIND_APP_RECORD || ev.kind === KIND_LEGACY_NOTE) {
     const a = tagVal(ev, "a");
     const m = /^30078:([0-9a-f]{64}):cabal:(.+)$/.exec(a ?? "");
     const postId = tagVal(ev, "cabal-post");
@@ -670,7 +691,11 @@ export function filtersForCampaign(campaignId, pubkey) {
   const f = [{ kinds: [KIND_CAMPAIGN], "#d": [`cabal:${campaignId}`] }];
   if (pubkey) {
     f[0].authors = [pubkey];
-    f.push({ kinds: [KIND_NOTE], authors: [pubkey], "#a": [campaignAddress(pubkey, campaignId)] });
+    // V79: kinds [30078, 78] — posts/assists moved from kind 1 to kind 78.
+    // Legacy kind 1 events are NOT queried (decodeEvent still accepts them
+    // if they arrive another way); the campaign doc carries the posts, so
+    // legacy rings are not stranded by the narrower filter.
+    f.push({ kinds: [KIND_APP_RECORD], authors: [pubkey], "#a": [campaignAddress(pubkey, campaignId)] });
   }
   return f;
 }
@@ -708,9 +733,68 @@ export const removeRelay = (url, storage) => saveRelays(loadRelays(storage).rela
 export const useDefaultRelays = (storage) => saveRelays([...DEFAULT_RELAYS], storage);
 
 // ---------------------------------------------------------------------------
+// NIP-42 AUTH (V79)
+// ---------------------------------------------------------------------------
+/** Prefix relays use in OK / CLOSED when an operation needs AUTH first. */
+const AUTH_REQUIRED_PREFIX = "auth-required: ";
+
+/**
+ * Build a NIP-42 AUTH event: kind 22242, ephemeral, tags ["relay", url] and
+ * ["challenge", challenge], created_at = now, signed with the given secret
+ * key (the shared CAMPAIGN key — the ring authenticates as its own author).
+ * Pure (async only for signing). Never logs or stores the key.
+ */
+export async function authEvent(relayUrl, challenge, secretKey) {
+  if (typeof relayUrl !== "string" || !relayUrl || typeof challenge !== "string" || !challenge) {
+    throw new Error("authEvent needs a relay URL and a challenge string");
+  }
+  return signEvent({
+    kind: KIND_AUTH,
+    tags: [["relay", relayUrl], ["challenge", challenge]],
+    content: "",
+  }, secretKey);
+}
+
+/**
+ * Normalize a createRelayClient / publish / fetch `auth` option into
+ * { secretKey } | { signer } | null. Two seams, same result:
+ *  - a 64-char hex secret key (the campaign key) — the client signs kind
+ *    22242 itself via authEvent();
+ *  - a signer function (relayUrl, challenge) => signed kind 22242 event
+ *    (sync or async) — for callers that hold the key elsewhere.
+ * Throws on any other shape so a miswired credential fails loud, not silent.
+ */
+function normalizeAuth(auth) {
+  if (auth == null) return null;
+  if (typeof auth === "string") {
+    if (!isValidSecretKey(auth)) throw new Error("auth secret key must be a valid 64-char hex secret key");
+    return { secretKey: auth };
+  }
+  if (typeof auth === "function") return { signer: auth };
+  throw new Error("auth must be a campaign secret-key hex string or a signer function (relayUrl, challenge) => signed kind 22242 event");
+}
+
+/** Resolve one auth credential into a signed kind 22242 event. */
+async function signAuthEvent(auth, relayUrl, challenge) {
+  if (auth.signer) {
+    const ev = await auth.signer(relayUrl, challenge);
+    if (!ev || ev.kind !== KIND_AUTH) throw new Error("auth signer must return a signed kind 22242 event");
+    return ev;
+  }
+  return authEvent(relayUrl, challenge, auth.secretKey);
+}
+
+/** The campaign key to authenticate with for `campaignId`, or null (read-only ring — fetch stays unauthenticated, best effort). */
+function authKeyFor(localCampaigns, campaignId) {
+  const c = (localCampaigns ?? []).find((x) => x && x.id === campaignId);
+  return hasCampaignKey(c) ? c.key : null;
+}
+
+// ---------------------------------------------------------------------------
 // Relay client (vanilla WebSocket; best-effort; a down relay never throws)
 // ---------------------------------------------------------------------------
-export function createRelayClient({ relays = [], WebSocketImpl = globalThis.WebSocket, timeoutMs = 6000, deadCooldownMs = 60000, onStatus } = {}) {
+export function createRelayClient({ relays = [], WebSocketImpl = globalThis.WebSocket, timeoutMs = 6000, deadCooldownMs = 60000, onStatus, auth: authOpt = null } = {}) {
+  const clientAuth = normalizeAuth(authOpt);
   const conns = new Map();
   // V76: a relay that failed to connect (or dropped) is not re-dialled until
   // the cooldown elapses, so one dead default costs one timeout per session
@@ -726,7 +810,7 @@ export function createRelayClient({ relays = [], WebSocketImpl = globalThis.WebS
       setState(url, "unreachable");
       return Promise.resolve(null);
     }
-    const c = { ws: null, listeners: new Set() };
+    const c = { ws: null, listeners: new Set(), challenge: null, authed: false, authedWith: null, authPromise: null, challengeWaiters: new Set() };
     c.ready = new Promise((resolve) => {
       let settled = false;
       const done = (ok) => { if (!settled) { settled = true; clearTimeout(timer); setState(url, ok ? "connected" : "unreachable"); if (!ok) { conns.delete(url); deadSince.set(url, Date.now()); } resolve(ok ? c : null); } };
@@ -738,7 +822,14 @@ export function createRelayClient({ relays = [], WebSocketImpl = globalThis.WebS
         c.ws.onopen = () => done(true);
         c.ws.onerror = () => done(false);
         c.ws.onclose = () => { if (!settled) done(false); else { conns.delete(url); deadSince.set(url, Date.now()); setState(url, "unreachable"); } };
-        c.ws.onmessage = (m) => { let msg; try { msg = JSON.parse(m.data); } catch { return; } for (const l of c.listeners) l(msg); };
+        c.ws.onmessage = (m) => {
+          let msg; try { msg = JSON.parse(m.data); } catch { return; }
+          // V79 NIP-42: ["AUTH", challenge] — remember the challenge and, when
+          // the client was constructed with an auth credential, answer it at
+          // once so later publish/fetch ops are already authenticated.
+          if (msg[0] === "AUTH" && typeof msg[1] === "string") { noteChallenge(c, url, msg[1]); return; }
+          for (const l of c.listeners) l(msg);
+        };
       } catch { done(false); }
     });
     conns.set(url, c);
@@ -746,41 +837,156 @@ export function createRelayClient({ relays = [], WebSocketImpl = globalThis.WebS
   }
   const rid = () => Math.random().toString(36).slice(2, 10);
 
+  // V79 NIP-42 helpers (per connection; `auth` is a normalized credential).
+  // Credential identity for the authed-memo: the secret-key hex string, or
+  // the signer function reference (a fresh normalized wrapper must NOT
+  // count as a different credential, or every op would re-AUTH).
+  const authIdOf = (a) => a.secretKey ?? a.signer;
+  function noteChallenge(c, url, challenge) {
+    c.challenge = challenge;
+    for (const w of c.challengeWaiters) w(challenge);
+    c.challengeWaiters.clear();
+    if (clientAuth) authenticateConn(c, url, challenge, clientAuth).catch(() => { /* best-effort; the op retry covers a failed AUTH */ });
+  }
+  /** Wait for the relay's AUTH challenge (bounded); null when none arrives. Only used after a relay has said it wants AUTH. */
+  function waitForChallenge(c, ms) {
+    if (c.challenge) return Promise.resolve(c.challenge);
+    return new Promise((resolve) => {
+      const res = (ch) => { clearTimeout(t); resolve(ch); };
+      const t = setTimeout(() => { c.challengeWaiters.delete(res); resolve(null); }, ms);
+      c.challengeWaiters.add(res);
+    });
+  }
+  /** Sign kind 22242 for `challenge` and send ["AUTH", event]; resolves true when the relay OKs it. Memoized per connection+credential. */
+  async function authenticateConn(c, url, challenge, auth) {
+    if (c.authed && c.authedWith === authIdOf(auth)) return true;
+    if (c.authPromise) return c.authPromise;
+    const ch = challenge ?? c.challenge;
+    if (!ch) return false;
+    c.authPromise = (async () => {
+      try {
+        const ev = await signAuthEvent(auth, url, ch);
+        const ok = await new Promise((resolve) => {
+          const t = setTimeout(() => { c.listeners.delete(l); resolve(false); }, timeoutMs);
+          const l = (msg) => { if (msg[0] === "OK" && msg[1] === ev.id) { clearTimeout(t); c.listeners.delete(l); resolve(!!msg[2]); } };
+          c.listeners.add(l);
+          try { c.ws.send(JSON.stringify(["AUTH", ev])); } catch { clearTimeout(t); c.listeners.delete(l); resolve(false); }
+        });
+        if (ok) { c.authed = true; c.authedWith = authIdOf(auth); }
+        return ok;
+      } catch { return false; }
+      finally { c.authPromise = null; }
+    })();
+    return c.authPromise;
+  }
+  /**
+   * Authenticate this connection before an op when a credential is available
+   * (per-op `auth` wins over the construction-time one) and the relay has
+   * already sent a challenge. Returns false with no delay when there is no
+   * credential or no challenge yet — the op is sent anyway and the
+   * "auth-required: " retry below covers a relay that demands AUTH.
+   */
+  async function ensureAuthed(c, url, opAuth) {
+    const a = opAuth != null ? normalizeAuth(opAuth) : clientAuth;
+    if (!a) return false;
+    if (c.authed && c.authedWith === authIdOf(a)) return true;
+    if (c.authPromise) { await c.authPromise; return c.authed && c.authedWith === authIdOf(a); }
+    if (c.challenge) return authenticateConn(c, url, c.challenge, a);
+    return false;
+  }
+  /** One EVENT send + OK wait. On "auth-required: " rejection, authenticate once and retry the send once. */
+  async function publishOnce(c, url, ev, opAuth, retried = false) {
+    return new Promise((resolve) => {
+      const t = setTimeout(() => { c.listeners.delete(l); resolve({ ok: false, message: "no reply" }); }, timeoutMs);
+      const l = (msg) => {
+        if (msg[0] !== "OK" || msg[1] !== ev.id) return;
+        const ok = !!msg[2];
+        const message = String(msg[3] ?? "");
+        const needsAuth = !ok && !retried && message.startsWith(AUTH_REQUIRED_PREFIX) && (opAuth != null || clientAuth);
+        clearTimeout(t); c.listeners.delete(l);
+        if (!needsAuth) { resolve({ ok, message }); return; }
+        (async () => {
+          try {
+            const ch = c.challenge ?? (await waitForChallenge(c, Math.min(timeoutMs, 1000)));
+            const authed = ch ? await authenticateConn(c, url, ch, opAuth != null ? normalizeAuth(opAuth) : clientAuth) : false;
+            resolve(authed ? await publishOnce(c, url, ev, opAuth, true) : { ok: false, message });
+          } catch { resolve({ ok: false, message }); }
+        })();
+      };
+      c.listeners.add(l);
+      try { c.ws.send(JSON.stringify(["EVENT", ev])); } catch { clearTimeout(t); c.listeners.delete(l); resolve({ ok: false, message: "send failed" }); }
+    });
+  }
+  /** One REQ + EOSE wait, collecting verified events into `byId`. On "auth-required: " CLOSED, authenticate once and retry the REQ once. */
+  async function fetchOnce(c, url, filters, waitMs, opAuth, byId, retried = false) {
+    const sub = rid();
+    await new Promise((resolve) => {
+      const pending = [];
+      let done = false;
+      const finish = async () => {
+        if (done) return; done = true;
+        clearTimeout(t); c.listeners.delete(l);
+        try { c.ws.send(JSON.stringify(["CLOSE", sub])); } catch { /* ignore */ }
+        await Promise.all(pending); resolve();
+      };
+      const t = setTimeout(finish, waitMs);
+      const l = (msg) => {
+        if (msg[1] !== sub) return;
+        if (msg[0] === "EVENT" && msg[2] && !byId.has(msg[2].id)) {
+          pending.push(verifyEvent(msg[2]).then((ok) => { if (ok) byId.set(msg[2].id, msg[2]); }));
+        } else if (msg[0] === "EOSE") finish();
+        else if (msg[0] === "CLOSED") {
+          const reason = String(msg[2] ?? "");
+          const needsAuth = !retried && reason.startsWith(AUTH_REQUIRED_PREFIX) && (opAuth != null || clientAuth);
+          if (!needsAuth) { finish(); return; }
+          if (done) return; done = true;
+          clearTimeout(t); c.listeners.delete(l);
+          (async () => {
+            try {
+              const ch = c.challenge ?? (await waitForChallenge(c, Math.min(timeoutMs, 1000)));
+              const authed = ch ? await authenticateConn(c, url, ch, opAuth != null ? normalizeAuth(opAuth) : clientAuth) : false;
+              if (authed) await fetchOnce(c, url, filters, waitMs, opAuth, byId, true);
+            } catch { /* best-effort; partial results stand */ }
+            resolve();
+          })();
+        }
+      };
+      c.listeners.add(l);
+      try { c.ws.send(JSON.stringify(["REQ", sub, ...filters])); } catch { finish(); }
+    });
+  }
+
   return {
     status: () => ({ ...state }),
-    async publish(ev) {
+    /**
+     * V79: authenticate one relay connection as the construction-time auth
+     * credential (campaign key). Resolves false when no auth was configured,
+     * the relay is unreachable, or no AUTH challenge arrived in time.
+     */
+    async authenticate(url) {
+      const c = await connect(url);
+      if (!c || !clientAuth) return false;
+      const ch = c.challenge ?? (await waitForChallenge(c, Math.min(timeoutMs, 1000)));
+      if (!ch) return false;
+      return authenticateConn(c, url, ch, clientAuth);
+    },
+    async publish(ev, { auth: opAuth } = {}) {
       const results = {};
       await Promise.all(relays.map(async (url) => {
         const c = await connect(url);
         if (!c) { results[url] = { ok: false, message: "unreachable" }; return; }
-        results[url] = await new Promise((resolve) => {
-          const t = setTimeout(() => { c.listeners.delete(l); resolve({ ok: false, message: "no reply" }); }, timeoutMs);
-          const l = (msg) => { if (msg[0] === "OK" && msg[1] === ev.id) { clearTimeout(t); c.listeners.delete(l); resolve({ ok: !!msg[2], message: String(msg[3] ?? "") }); } };
-          c.listeners.add(l);
-          try { c.ws.send(JSON.stringify(["EVENT", ev])); } catch { clearTimeout(t); c.listeners.delete(l); resolve({ ok: false, message: "send failed" }); }
-        });
+        await ensureAuthed(c, url, opAuth);
+        results[url] = await publishOnce(c, url, ev, opAuth);
       }));
       return results;
     },
-    async fetch(filters, { waitMs = timeoutMs } = {}) {
+    async fetch(filters, { waitMs = timeoutMs, auth: opAuth } = {}) {
       const byId = new Map();
       await Promise.all(relays.map(async (url) => {
         const c = await connect(url);
         if (!c) return;
-        const sub = rid();
-        await new Promise((resolve) => {
-          const pending = [];
-          const finish = async () => { clearTimeout(t); c.listeners.delete(l); try { c.ws.send(JSON.stringify(["CLOSE", sub])); } catch { /* ignore */ } await Promise.all(pending); resolve(); };
-          const t = setTimeout(finish, waitMs);
-          const l = (msg) => {
-            if (msg[1] !== sub) return;
-            if (msg[0] === "EVENT" && msg[2] && !byId.has(msg[2].id)) {
-              pending.push(verifyEvent(msg[2]).then((ok) => { if (ok) byId.set(msg[2].id, msg[2]); }));
-            } else if (msg[0] === "EOSE" || msg[0] === "CLOSED") finish();
-          };
-          c.listeners.add(l);
-          try { c.ws.send(JSON.stringify(["REQ", sub, ...filters])); } catch { finish(); }
-        });
+        await ensureAuthed(c, url, opAuth);
+        await fetchOnce(c, url, filters, waitMs, opAuth, byId);
       }));
       return [...byId.values()];
     },
@@ -807,10 +1013,15 @@ export async function syncCampaign(client, localCampaigns, campaignId, pubkey, o
   const local = localCampaigns ?? [];
   try {
     const known = pubkey ?? campaignPubkey(local.find((c) => c.id === campaignId));
-    let events = await client.fetch(filtersForCampaign(campaignId, known));
+    // V79: fetch authenticates as the ring when this browser holds the
+    // campaign key (NIP-42 AUTH, per-op `auth`); read-only rings fetch
+    // unauthenticated, best effort. opts.auth overrides the local key.
+    const auth = opts.auth ?? authKeyFor(local, campaignId);
+    const fetchOpts = auth ? { auth } : undefined;
+    let events = await client.fetch(filtersForCampaign(campaignId, known), fetchOpts);
     if (!known) {
       const camp = events.find((e) => e.kind === KIND_CAMPAIGN);
-      if (camp) events = events.concat(await client.fetch(filtersForCampaign(campaignId, camp.pubkey)));
+      if (camp) events = events.concat(await client.fetch(filtersForCampaign(campaignId, camp.pubkey), fetchOpts));
     }
     return applyRelayEvents(local, events, { wantIds: [campaignId], ...opts });
   } catch {
@@ -847,7 +1058,10 @@ export async function publishCampaign(client, campaign, opts = {}) {
     }
   }
   const results = [];
-  for (const ev of out) results.push({ id: ev.id, kind: ev.kind, relays: await client.publish(ev) });
+  // V79: publish authenticates as the ring (NIP-42 AUTH) with the shared
+  // campaign key — the same key that signs the events.
+  const publishOpts = { auth: key };
+  for (const ev of out) results.push({ id: ev.id, kind: ev.kind, relays: await client.publish(ev, publishOpts) });
   // V76: stamp the local campaign with the relay-accepted campaign event so
   // the membership line stops saying "not published yet" and the share link
   // upgrades to the short naddr link. Stamped ONLY when at least one relay
@@ -876,7 +1090,7 @@ export async function publishRemoval(client, campaign, opts = {}) {
   }
   const { key } = campaignKeypair(campaign);
   const ev = await signEvent(removalEvent(campaign, { createdAt: opts.createdAt }), key);
-  const relays = await client.publish(ev);
+  const relays = await client.publish(ev, { auth: key });
   // V76: stamp the local campaign when a relay accepted the removal republish,
   // so the membership line and the next removal's strictly-newer created_at
   // both read the truth. Null when no relay accepted.
@@ -896,7 +1110,7 @@ export async function publishAdoption(client, campaign, opts = {}) {
   }
   const { key } = campaignKeypair(campaign);
   const ev = await signEvent(adoptionEvent(campaign, { createdAt: opts.createdAt }), key);
-  const relays = await client.publish(ev);
+  const relays = await client.publish(ev, { auth: key });
   // V76: same stamping rule as publishRemoval — stamp only on relay acceptance.
   const accepted = Object.values(relays ?? {}).some((r) => r?.ok);
   return { event: ev, id: ev.id, kind: ev.kind, relays, campaign: accepted ? stampPublished(campaign, ev) : null };
@@ -920,7 +1134,12 @@ export function mount(rootEl, ctx = {}) {
   };
   const clientFor = () => {
     const { relays } = loadRelays(ctx.storage);
-    return ctx.client ?? createRelayClient({ relays, WebSocketImpl: ctx.WebSocketImpl, onStatus: (s) => { statusMap = s; render(); } });
+    // V79: the panel's client authenticates as the ring when the active
+    // campaign holds its shared key (NIP-42 AUTH; the key is never shown).
+    // Per-op auth in syncCampaign/publishCampaign covers clients the
+    // coordinator injects via ctx.client, so this is belt-and-braces.
+    const writable = activeCampaigns().find(hasCampaignKey);
+    return ctx.client ?? createRelayClient({ relays, auth: writable?.key ?? null, WebSocketImpl: ctx.WebSocketImpl, onStatus: (s) => { statusMap = s; render(); } });
   };
   const activeCampaigns = () => {
     if (ctx.campaign) return [ctx.campaign];

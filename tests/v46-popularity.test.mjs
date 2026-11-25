@@ -83,18 +83,18 @@ describe("V46 countFormatUsage", () => {
     assert.equal(usage.get("fmt_tag_fallback").rings.has(PK_C), true);
   });
 
-  test("kind 1 events count as assists via tag only and NEVER add to rings", () => {
+  test("kind 78 events count as assists via tag only and NEVER add to rings; legacy kind 1 still counts (V79 back-compat)", () => {
     const events = [
       {
         id: "n1",
-        kind: 1,
+        kind: 78,
         pubkey: PK_A,
         tags: [["t", "cabal"], ["t", "cabal:format:fmt_clip"]],
         content: JSON.stringify({ handle: "@moss", note: "Shared!" }),
       },
       {
         id: "n2",
-        kind: 1,
+        kind: 78,
         pubkey: PK_B,
         tags: [["t", "cabal:format:fmt_clip"]],
         content: JSON.stringify({ formatId: "fmt_should_not_read_content" }),
@@ -102,18 +102,26 @@ describe("V46 countFormatUsage", () => {
       // Duplicate event id across relays must not double-count
       {
         id: "n1",
-        kind: 1,
+        kind: 78,
         pubkey: PK_A,
         tags: [["t", "cabal:format:fmt_clip"]],
         content: JSON.stringify({ handle: "@moss", note: "Shared!" }),
       },
-      // Kind 1 with formatId only in content and no tag is ignored
+      // Kind 78 with formatId only in content and no tag is ignored
       {
         id: "n3",
-        kind: 1,
+        kind: 78,
         pubkey: PK_C,
         tags: [["t", "cabal"]],
         content: JSON.stringify({ formatId: "fmt_content_only" }),
+      },
+      // Legacy kind 1 assist (published before the V79 migration) still counts
+      {
+        id: "n4",
+        kind: 1,
+        pubkey: PK_A,
+        tags: [["t", "cabal:format:fmt_clip"]],
+        content: JSON.stringify({ handle: "@legacy", note: "Shared before V79." }),
       },
     ];
 
@@ -122,7 +130,7 @@ describe("V46 countFormatUsage", () => {
     assert.equal(usage.has("fmt_content_only"), false);
     const clip = usage.get("fmt_clip");
     assert.equal(clip.rings.size, 0);
-    assert.equal(clip.assists, 2);
+    assert.equal(clip.assists, 3);
   });
 
   test("ignores malformed events, bad content, unknown kinds, and missing format refs; never throws", () => {
@@ -143,8 +151,8 @@ describe("V46 countFormatUsage", () => {
       { id: "bad5", kind: 7, pubkey: PK_A, tags: [["t", "cabal:format:fmt_x"]], content: "+" },
       // No format reference
       { id: "bad6", kind: 30078, pubkey: PK_A, tags: [["t", "cabal"]], content: '{"id":"cmp_1"}' },
-      { id: "bad7", kind: 1, pubkey: PK_A, tags: [["t", "cabal:format:"]], content: "empty id" },
-      { id: "bad8", kind: 1, pubkey: PK_A, tags: "not-an-array", content: "" },
+      { id: "bad7", kind: 78, pubkey: PK_A, tags: [["t", "cabal:format:"]], content: "empty id" },
+      { id: "bad8", kind: 1, pubkey: PK_A, tags: "not-an-array", content: "" }, // legacy kind 1, still ignored when malformed
     ];
 
     assert.equal(countFormatUsage(events).size, 0);
@@ -238,7 +246,7 @@ describe("V46 filtersForFormat & formatTag", () => {
     assert.equal(formatTag(null), null);
 
     assert.deepEqual(filtersForFormat("fmt_devlog"), {
-      kinds: [1, 30078],
+      kinds: [78, 1, 30078],
       "#t": ["cabal:format:fmt_devlog"],
     });
     assert.equal(filtersForFormat("  "), null);
@@ -264,7 +272,7 @@ describe("V46 queryFormatUsage (relay client integration)", () => {
     }, kp2.key);
 
     const assist1 = await N.signEvent({
-      kind: N.KIND_NOTE,
+      kind: N.KIND_APP_RECORD,
       tags: [["a", N.campaignAddress(kp1.pubkey, "cmp_1")], ["t", "cabal"], formatTag("fmt_launch")],
       content: JSON.stringify({ handle: "@wren", note: "Quoted on X." }),
     }, kp1.key);
@@ -329,8 +337,8 @@ describe("V46 queryFormatUsage (relay client integration)", () => {
     // Verify exact REQ filter shape sent to answering relays
     assert.equal(sentReqs.length, 2);
     assert.deepEqual(sentReqs[0].filters, [
-      { kinds: [1, 30078], "#t": ["cabal:format:fmt_launch"] },
-      { kinds: [1, 30078], "#t": ["cabal:format:fmt_clip"] },
+      { kinds: [78, 1, 30078], "#t": ["cabal:format:fmt_launch"] },
+      { kinds: [78, 1, 30078], "#t": ["cabal:format:fmt_clip"] },
     ]);
   });
 
