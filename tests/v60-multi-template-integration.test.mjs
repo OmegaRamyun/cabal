@@ -1,8 +1,11 @@
 // V60 acceptance tests — multi-template integration (coordinator lane).
 // Covers: preselected creation stores formatIds (no legacy formatId key),
-// ToonSouls runs two templates in the static data, the graph gives that ring
-// two `runs` edges, postersForFormat (the template is the node of everybody
-// who posted it), and the format page mount rendering the Posted-by roster.
+// a two-template fixture ring, the graph gives that ring two `runs` edges,
+// postersForFormat (the template is the node of everybody who posted it),
+// and the format page mount rendering the Posted-by roster.
+// (V74: the old "static demo data" block read ToonSouls from
+// data/campaigns.json; the static list is empty now, so the two-template
+// case uses the inline ringWithPosts fixture below.)
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -13,7 +16,6 @@ import {
   mount as mountFormat,
 } from '../src/campaign-formats.mjs';
 import { buildGraph } from '../src/graph.mjs';
-import { demoCampaigns } from '../src/demo.mjs';
 import { createMemoryStore } from '../src/store.mjs';
 
 const FMT_ALGO = {
@@ -90,26 +92,22 @@ describe('V60 preselected creation stores formatIds', () => {
   });
 });
 
-describe('V60 static demo data: ToonSouls runs two templates', () => {
-  test('data/campaigns.json ToonSouls has formatIds oneclip + algoigno', () => {
-    const data = JSON.parse(readFileSync(new URL('../data/campaigns.json', import.meta.url), 'utf8'));
-    const toon = data.campaigns.find((c) => c.id === 'cmp_toon001');
-    assert.deepEqual(toon.formatIds, ['fmt_oneclip1', 'fmt_algoigno']);
-    assert.equal('formatId' in toon, false);
+describe('V60 fixture ring runs two templates', () => {
+  test('inline two-template ring has formatIds oneclip + algoigno', () => {
+    assert.deepEqual(ringWithPosts().formatIds, ['fmt_oneclip1', 'fmt_algoigno']);
+    assert.equal('formatId' in ringWithPosts(), false);
   });
 
-  test('graph over static + demo rings gives ToonSouls two runs edges', () => {
-    const data = JSON.parse(readFileSync(new URL('../data/campaigns.json', import.meta.url), 'utf8'));
+  test('graph over the fixture ring gives it two runs edges', () => {
     const formatsData = JSON.parse(readFileSync(new URL('../data/formats.json', import.meta.url), 'utf8'));
-    const seeded = demoCampaigns(new Date('2026-11-23T12:00:00Z'));
     const g = buildGraph({
-      rings: [...data.campaigns, ...seeded],
+      rings: [ringWithPosts()],
       formats: formatsData.formats,
       usage: new Map(),
     });
-    const toonNode = g.nodes.find((n) => n.kind === 'ring' && n.ref === 'cmp_toon001');
-    assert.ok(toonNode, 'ToonSouls ring node exists');
-    const runs = g.edges.filter((e) => e.kind === 'runs' && e.from === toonNode.id);
+    const node = g.nodes.find((n) => n.kind === 'ring' && n.ref === 'cmp_toon001');
+    assert.ok(node, 'fixture ring node exists');
+    const runs = g.edges.filter((e) => e.kind === 'runs' && e.from === node.id);
     assert.equal(runs.length, 2);
     assert.deepEqual(
       runs.map((e) => e.to).sort(),

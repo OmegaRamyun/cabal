@@ -5,14 +5,14 @@
 //   discovery view used: listable rings only, formats only when a ring
 //   runs them (locally or by relay usage), positions keyed by node id,
 //   radii shared with the layout (radiusForWeight adapter).
-// - Demo data runs formats: the static ToonSouls ring runs fmt_oneclip1
-//   and the seeded launch-week ring runs fmt_algoigno, so the live net
-//   shows template nodes with real `runs` edges.
+// - Demo data runs formats: the seeded launch-week ring runs fmt_algoigno,
+//   so the live net shows template nodes with real `runs` edges. The static
+//   list is empty since V74 (ToonSouls removed), so the two-template case is
+//   covered by an inline fixture ring instead.
 // DOM behaviour (net renders, tap-to-panel, create flows): manual check
 // note in tasks/V53-integration.md, not a skipped test.
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import { openNodeTarget, nodeViewGraph } from '../app.js';
 import { radiusForWeight } from '../src/graph.mjs';
 import { demoCampaigns } from '../src/demo.mjs';
@@ -126,10 +126,9 @@ describe('nodeViewGraph', () => {
 });
 
 describe('demo data runs formats', () => {
-  test('static ToonSouls runs fmt_oneclip1 + fmt_algoigno (V60: two templates)', () => {
-    const data = JSON.parse(fs.readFileSync(new URL('../data/campaigns.json', import.meta.url), 'utf8'));
-    const toon = data.campaigns.find((c) => c.id === 'cmp_toon001');
-    assert.deepEqual(toon.formatIds, ['fmt_oneclip1', 'fmt_algoigno']);
+  test('fixture ring runs fmt_oneclip1 + fmt_algoigno (V74: static list is empty, no ToonSouls)', () => {
+    const fixture = ring('cmp_fix001', ['@a', '@b'], { formatIds: ['fmt_oneclip1', 'fmt_algoigno'] });
+    assert.deepEqual(fixture.formatIds, ['fmt_oneclip1', 'fmt_algoigno']);
   });
   test('seeded launch-week ring runs fmt_algoigno', () => {
     const seeded = demoCampaigns(new Date('2026-11-23T12:00:00Z'));

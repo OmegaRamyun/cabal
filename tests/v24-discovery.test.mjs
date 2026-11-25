@@ -183,17 +183,10 @@ test("mergeLists: dedupe by id, local wins, local-only appended", () => {
 
 // --- data/campaigns.json ---
 
-test("data/campaigns.json: exactly one fictional demo campaign, listable", () => {
+test("data/campaigns.json: empty static list — no shipped campaign (V74 removed ToonSouls)", () => {
   assert.equal(staticList.version, 1);
-  assert.equal(staticList.updated, "2026-11-23");
-  assert.equal(staticList.campaigns.length, 1);
-  const [c] = staticList.campaigns;
-  assert.equal(c.demo, true);
-  assert.equal(c.game.name, "ToonSouls");
-  assert.deepEqual(c.game.tags, ["souls-like", "cartoon"]);
-  assert.ok(c.game.links.steam.startsWith("https://"));
-  assert.equal(isListable(c), true);
-  assert.ok(c.members.length >= 2);
+  assert.equal(staticList.updated, "2026-11-24");
+  assert.deepEqual(staticList.campaigns, []);
 });
 
 // --- mount (minimal fake DOM; real browser check is a manual note) ---
@@ -242,7 +235,18 @@ test("mount: renders Similar + Popular sections, row detail, DEMO badge, click n
   const doc = { createElement: (tag) => new FakeEl(tag) };
   const root = new FakeEl("div");
   root.ownerDocument = doc;
-  const demo = staticList.campaigns[0];
+  // Inline fixture (V74): the static list is empty now, so the mount test
+  // builds its demo ring here instead of reading staticList.campaigns[0].
+  const demo = makeCampaign({
+    id: "cmp_inline01",
+    demo: true,
+    title: "Pixel Orchard launch week",
+    game: {
+      name: "Pixel Orchard",
+      links: { steam: "https://store.steampowered.com/app/6/Pixel_Orchard/" },
+      tags: ["cozy", "farming"],
+    },
+  });
   const plain = makeCampaign({ id: "cmp_plain001", game: { name: "Plain Game", links: { steam: "https://store.steampowered.com/app/5/Plain/" }, tags: ["cozy"] } });
   const navigated = [];
   mount(root, { myTags: ["cozy", "farming"], campaigns: [demo, plain], navigate: (c) => navigated.push(c.id) });
@@ -250,15 +254,15 @@ test("mount: renders Similar + Popular sections, row detail, DEMO badge, click n
   const text = root.textContent;
   assert.ok(text.includes("Similar games"));
   assert.ok(text.includes("Popular"));
-  assert.ok(text.includes("ToonSouls"));
-  assert.ok(text.includes("ToonSouls launch week"));
+  assert.ok(text.includes("Pixel Orchard"));
+  assert.ok(text.includes("Pixel Orchard launch week"));
   assert.ok(text.includes("2 members, 1 ringmate has contributed"));
-  assert.ok(text.includes("souls-like, cartoon"));
+  assert.ok(text.includes("cozy, farming"));
   assert.ok(text.includes("DEMO"));
 
   const buttons = root.querySelectorAll("button");
   assert.ok(buttons.length >= 2);
   buttons[0].click();
   assert.equal(navigated.length, 1);
-  assert.ok(["cmp_toon001", "cmp_plain001"].includes(navigated[0]));
+  assert.ok(["cmp_inline01", "cmp_plain001"].includes(navigated[0]));
 });

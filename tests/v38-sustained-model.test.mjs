@@ -38,6 +38,45 @@ const ring = () => {
   return c;
 };
 
+// V74 fixture: a v2 sustained ring in the shape the old static ToonSouls
+// ring had (x + reddit + instagram posts, assists on the first two).
+// The static list is empty now, so tests build it inline instead of
+// reading data/campaigns.json.
+const sustainedFixture = () => ({
+  id: "cmp_fixture01",
+  game: { name: "Brass Orchard", links: { itch: "https://brass.itch.io/orchard", steam: "https://store.steampowered.com/app/1/Brass_Orchard/" }, tags: ["cozy"] },
+  title: "Brass Orchard launch week",
+  anchorPost: { platform: "x", url: "https://x.com/brassdev/status/1", text: "Brass Orchard is out now.", author: "@brassdev" },
+  window: null,
+  demo: true,
+  members: [
+    { name: "Brass Dev", handle: "@brassdev" },
+    { name: "Jo", handle: "@jo" },
+  ],
+  createdAt: "2026-11-22T09:00:00Z",
+  posts: [
+    {
+      id: "pst_fix0001", author: "@brassdev", platform: "x",
+      url: "https://x.com/brassdev/status/1", text: "Brass Orchard is out now.",
+      createdAt: "2026-11-22T09:00:00Z", kind: "announcement",
+      assists: [{ handle: "@jo", status: "contributed", contributedAt: "2026-11-22T12:30:00Z", url: "https://x.com/jo/status/9", quoteText: "Worth a look." }],
+    },
+    {
+      id: "pst_fix0002", author: "@brassdev", platform: "reddit",
+      url: "https://www.reddit.com/r/gamedev/comments/1abc123/brass_devlog/",
+      text: "Devlog: how we animate the orchard, frame by frame.",
+      createdAt: "2026-11-23T08:30:00Z", kind: "devlog",
+      assists: [{ handle: "@jo", status: "contributed", contributedAt: "2026-11-23T10:00:00Z", url: "https://x.com/jo/status/10", note: "Upvoted. Shared it with my own followers." }],
+    },
+    {
+      id: "pst_fix0003", author: "@jo", platform: "instagram",
+      url: "https://www.instagram.com/p/ABC123/",
+      text: "Boss fight clip: twenty seconds, three deaths, one very smug skeleton.",
+      createdAt: "2026-11-23T16:00:00Z", kind: "clip", assists: [],
+    },
+  ],
+});
+
 // --- normalizeCampaign / migration ---
 
 test("normalizeCampaign: old anchor-only shape -> v2, member posted state -> assists on posts[0]", () => {
@@ -357,20 +396,19 @@ test("demo: v2 shape, Next Fest ring has two posts incl. a Reddit post by Wren w
   assert.equal(postedCount(fest), 5);
 });
 
-test("data/campaigns.json: ToonSouls is the sustained example ring (spec section 7)", () => {
-  const data = JSON.parse(readFileSync(new URL("../data/campaigns.json", import.meta.url), "utf8"));
-  const c = data.campaigns.find((x) => x.id === "cmp_toon001");
+test("sustained fixture ring: v2 shape, three platforms, assists (V74 inline replacement for the old static ToonSouls test)", () => {
+  const c = sustainedFixture();
   assert.deepEqual(validateCampaign(c), []);
   assert.equal(c.window, null);
   assert.equal(c.demo, true);
   assert.deepEqual(c.posts.map((p) => p.platform), ["x", "reddit", "instagram"]);
-  assert.equal(c.posts[0].author, "@toonsouls");
-  assert.equal(c.posts[1].url, "https://www.reddit.com/r/gamedev/comments/1abc123/toonsouls_devlog/");
+  assert.equal(c.posts[0].author, "@brassdev");
+  assert.equal(c.posts[1].url, "https://www.reddit.com/r/gamedev/comments/1abc123/brass_devlog/");
   assert.equal(c.posts[2].url, "https://www.instagram.com/p/ABC123/");
-  assert.equal(c.posts[2].author, "@mossfinch");
-  assert.deepEqual(c.posts[0].assists.map((a) => a.handle), ["@mossfinch"]);
+  assert.equal(c.posts[2].author, "@jo");
+  assert.deepEqual(c.posts[0].assists.map((a) => a.handle), ["@jo"]);
   assert.ok(c.posts[0].assists[0].url, "quote-post link on the X anchor");
-  assert.deepEqual(c.posts[1].assists.map((a) => a.handle), ["@mossfinch"]);
+  assert.deepEqual(c.posts[1].assists.map((a) => a.handle), ["@jo"]);
   assert.ok(c.posts[1].assists[0].url, "share URL on the Reddit devlog");
   assert.deepEqual(c.posts[2].assists, []);
   assert.equal(isListable(c), true);
@@ -378,15 +416,21 @@ test("data/campaigns.json: ToonSouls is the sustained example ring (spec section
 });
 
 test("atom: summary describes the LATEST post, updated tracks latest activity", () => {
-  const data = JSON.parse(readFileSync(new URL("../data/campaigns.json", import.meta.url), "utf8"));
-  const c = data.campaigns.find((x) => x.id === "cmp_toon001");
+  const c = sustainedFixture();
   const entry = campaignToEntry(c, { linkFor: () => "https://e.test/#c=x", now: new Date("2026-11-23T18:00:00Z") });
-  assert.match(entry, /Latest post — instagram @mossfinch: Boss fight clip/);
+  assert.match(entry, /Latest post — instagram @jo: Boss fight clip/);
   assert.match(entry, /\(2h\)/);
-  assert.match(entry, /<name>@mossfinch<\/name>/);
+  assert.match(entry, /<name>@jo<\/name>/);
   assert.match(entry, /<updated>2026-11-23T16:00:00Z<\/updated>/);
   assert.match(entry, /1\/2 ringmates have contributed/);
-  assert.doesNotMatch(entry, /launch-week|ToonSouls is out now/, "not the anchor text");
+  assert.doesNotMatch(entry, /launch-week|Brass Orchard is out now/, "not the anchor text");
+  // V74: the committed feed is the empty 0-entry feed — no shipped campaign.
   const feed = readFileSync(new URL("../campaigns.atom", import.meta.url), "utf8");
-  assert.match(feed, /Latest post — instagram @mossfinch/, "committed feed is regenerated");
+  assert.doesNotMatch(feed, /<entry>/, "committed feed has no entries");
+  assert.match(feed, /<updated>1970-01-01T00:00:00Z<\/updated>/, "empty feed falls back to the epoch");
+});
+
+test("data/campaigns.json: static list is empty since V74 (no shipped campaign)", () => {
+  const data = JSON.parse(readFileSync(new URL("../data/campaigns.json", import.meta.url), "utf8"));
+  assert.deepEqual(data.campaigns, []);
 });
