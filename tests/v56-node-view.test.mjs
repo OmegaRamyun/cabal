@@ -1,5 +1,5 @@
 // V56 acceptance: label-aware d3-force layout, zero bounding-box overlaps on
-// the 6-node demo graph, >= 12px CSS px label font-size floor, view-layer ring
+// the 4-node demo graph (V74: Starlight-only), >= 12px CSS px label font-size floor, view-layer ring
 // title resolution, and mobile bottom-sheet state helpers.
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
@@ -7,7 +7,6 @@ import fs from "node:fs";
 
 import { buildGraph, layoutGraph, radiusForWeight } from "../src/graph.mjs";
 import { demoCampaigns } from "../src/demo.mjs";
-import { mergeLists } from "../src/discovery.mjs";
 import {
   MIN_LABEL_CSS_PX,
   MOBILE_SHEET_BREAKPOINT,
@@ -28,16 +27,12 @@ import {
 } from "../src/node-view.mjs";
 
 function loadDemoGraphFixture() {
-  const staticData = JSON.parse(
-    fs.readFileSync(new URL("../data/campaigns.json", import.meta.url), "utf8"),
-  );
+  // V74: Starlight-only — the static list is empty (ToonSouls removed), so
+  // the demo graph is the 3 seeded Starlight rings + fmt_algoigno = 4 nodes.
   const formatsData = JSON.parse(
     fs.readFileSync(new URL("../data/formats.json", import.meta.url), "utf8"),
   );
-  const rings = mergeLists(
-    staticData.campaigns,
-    demoCampaigns(new Date("2026-11-23T12:00:00Z")),
-  );
+  const rings = demoCampaigns(new Date("2026-11-23T12:00:00Z"));
   const g = buildGraph({ rings, formats: formatsData.formats, usage: null });
   const positions = layoutGraph(g, { width: 800, height: 520 });
   const ringTitles = new Map(rings.map((r) => [r.id, r.title]));
@@ -50,9 +45,9 @@ function loadDemoGraphFixture() {
 }
 
 describe("V56 label-aware layout (demo graph)", () => {
-  test("6 demo nodes lay out with strictly 0 bounding-box overlaps on desktop and mobile", () => {
+  test("4 demo nodes lay out with strictly 0 bounding-box overlaps on desktop and mobile", () => {
     const { graph, ringTitles, radiusFor } = loadDemoGraphFixture();
-    assert.equal(graph.nodes.length, 6, "demo graph should have 6 nodes (4 rings + 2 formats)");
+    assert.equal(graph.nodes.length, 4, "demo graph should have 4 nodes (3 rings + 1 format)");
 
     // Desktop layout
     const desktopPos = layoutWithLabels(graph, {
