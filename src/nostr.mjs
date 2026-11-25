@@ -1116,6 +1116,37 @@ export async function publishAdoption(client, campaign, opts = {}) {
   return { event: ev, id: ev.id, kind: ev.kind, relays, campaign: accepted ? stampPublished(campaign, ev) : null };
 }
 
+/**
+ * V79b — true when `latest` holds covered content `published` did not send:
+ * a post by `handle` (or any post when no handle filter) that is absent from
+ * `published`, or a covered assist (same handle rule) on a post present in
+ * both. Pure. Used by the Publish handler's re-publish pass: a post/assist
+ * added while a publish awaited must go out too, not wait silently for the
+ * next publish while the stamp claims the ring is synced.
+ */
+export function hasNewCoveredContent(latest, published, handle) {
+  const covered = (c) => {
+    const out = new Map();
+    for (const p of c?.posts ?? []) {
+      const postMine = !handle || handleKey(p.author) === handleKey(handle);
+      const assists = new Set();
+      for (const a of p.assists ?? []) {
+        if (!handle || handleKey(a.handle) === handleKey(handle)) assists.add(handleKey(a.handle));
+      }
+      out.set(p.id, { postMine, assists });
+    }
+    return out;
+  };
+  const pub = covered(published);
+  for (const [id, entry] of covered(latest)) {
+    const prev = pub.get(id);
+    if (entry.postMine && !prev) return true;
+    if (!prev) continue;
+    for (const h of entry.assists) if (!prev.assists.has(h)) return true;
+  }
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // mount(rootEl, ctx) — the sync panel (relay status, relay list, publish
 // state, membership state, one-line privacy statement).
@@ -1142,9 +1173,23 @@ export function mount(rootEl, ctx = {}) {
     return ctx.client ?? createRelayClient({ relays, auth: writable?.key ?? null, WebSocketImpl: ctx.WebSocketImpl, onStatus: (s) => { statusMap = s; render(); } });
   };
   const activeCampaigns = () => {
-    if (ctx.campaign) return [ctx.campaign];
-    return ctx.getCampaigns?.() ?? [];
+    // V79b — NEVER read a mount-time snapshot. Every call re-reads fresh.
+    // When the panel was mounted for one ring (ctx.campaign, the object
+    // app.js resolved at route time), prefer the live store copy of that
+    // ring: ctx.getCampaigns() re-reads localStorage on every access, while
+    // the route-time object is never updated after the composer saves a
+    // new post/assist — so a plain fresh activeCampaigns() that returned
+    // [ctx.campaign] would STILL publish the stale snapshot. Only when the
+    // store does not hold the ring (e.g. a static listed campaign) fall
+    // back to the snapshot. Without ctx.campaign the panel covers the
+    // whole live store list, as before.
+    if (!ctx.campaign) return ctx.getCampaigns?.() ?? [];
+    const fromStore = ctx.getCampaigns?.() ?? [];
+    const fresh = fromStore.find((c) => c && c.id === ctx.campaign.id);
+    return fresh ? [fresh] : [ctx.campaign];
   };
+  // V79b — fresh copy of one ring by id, for the post-publish re-read.
+  const freshCampaign = (id) => activeCampaigns().find((c) => c && c.id === id);
 
   function relaySection() {
     const { configured, relays } = loadRelays(ctx.storage);
@@ -1186,14 +1231,20 @@ export function mount(rootEl, ctx = {}) {
   function actionSection() {
     const box = el("section", { class: "nostr-sync" }, el("h3", {}, "Sync"));
     const { relays } = loadRelays(ctx.storage);
+    // Render-time state only (button disabled-ness). The handlers below
+    // must NOT close over this list: it is stale the moment the composer
+    // saves a post/assist after the panel mounted (V79b).
     const camps = activeCampaigns();
     const canPublish = relays.length > 0 && camps.some(hasCampaignKey);
     box.append(el("button", { type: "button", ...(relays.length ? {} : { disabled: "" }), onclick: async () => {
       message = "Syncing…"; render();
       const client = clientFor();
       try {
-        let list = camps; let n = 0;
-        for (const c of camps) { const r = await syncCampaign(client, list, c.id); list = r.campaigns; n += r.applied; }
+        // V79b: seed the merge base from a fresh read at click time, not
+        // the mount-time list — a post added after mount must survive the
+        // fetch+merge instead of being overwritten by a stale base.
+        let list = activeCampaigns(); let n = 0;
+        for (const c of list) { const r = await syncCampaign(client, list, c.id); list = r.campaigns; n += r.applied; }
         ctx.onMerged?.(list);
         message = `Synced. ${n} update${n === 1 ? "" : "s"} merged. Your local ring is never overwritten by older data.`;
       } catch { message = "Couldn't reach the relays. Your ring still works from this browser."; }
@@ -1205,16 +1256,45 @@ export function mount(rootEl, ctx = {}) {
         const handle = ctx.me?.handle;
         let ok = 0, total = 0;
         const stamped = [];
-        for (const c of camps) {
-          if (!hasCampaignKey(c)) continue;
-          const res = await publishCampaign(clientFor(), c, { handle });
-          for (const r of res) {
-            for (const x of Object.values(r.relays)) { total++; if (x.ok) ok++; }
+        // V79b: read the store fresh at click time — the mount-time list
+        // is stale once the composer saves a post/assist.
+        for (const c0 of activeCampaigns()) {
+          if (!hasCampaignKey(c0)) continue;
+          let publishedSnap = c0;
+          let acceptedStamp = null;
+          // A post/assist added while this publish awaits must not be
+          // silently dropped either: re-read fresh after each pass and,
+          // while the fresh copy holds covered content the pass just
+          // published did not send, publish again from the fresh copy.
+          // Bounded to 3 passes — after the last pass the stamp is applied
+          // to the freshest copy, so anything added later still survives
+          // locally (never overwritten by a stale stamped copy) and goes
+          // out on the next publish. An accepted stamp from an earlier
+          // pass is kept even if a later re-publish pass finds no relay.
+          for (let pass = 0; pass < 3; pass++) {
+            const snap = freshCampaign(publishedSnap.id) ?? publishedSnap;
+            const res = await publishCampaign(clientFor(), snap, { handle });
+            for (const r of res) {
+              for (const x of Object.values(r.relays)) { total++; if (x.ok) ok++; }
+            }
+            if (!res.campaign) break;
+            acceptedStamp = res.campaign;
+            publishedSnap = snap;
+            const latest = freshCampaign(snap.id);
+            if (!latest || !hasNewCoveredContent(latest, snap, handle)) break;
           }
-          // V76: persist the relay-accepted stamp so the membership line and
-          // the share link upgrade immediately. onMerged merges by id (same
-          // seam as Fetch updates) and re-renders the campaign page only.
-          if (res.campaign) stamped.push(res.campaign);
+          // V79b: stamp the FRESHEST copy with the accepted campaign
+          // event, never the snapshot that was published minutes ago —
+          // stamping the stale copy and merging it by id would overwrite
+          // the store with the pre-post version and wipe the new post
+          // locally (the V79 verifier repro).
+          if (acceptedStamp?.nostr) {
+            const latest = freshCampaign(publishedSnap.id) ?? publishedSnap;
+            const n = acceptedStamp.nostr;
+            stamped.push(stampPublished(latest, { id: n.eventId, pubkey: n.pubkey, created_at: n.createdAt }));
+          } else if (acceptedStamp) {
+            stamped.push(acceptedStamp);
+          }
         }
         if (stamped.length) ctx.onMerged?.(stamped);
         message = `Published to relays: ${ok} of ${total} accepted. It is public, and it can't be reliably deleted.`;
