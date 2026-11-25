@@ -903,7 +903,11 @@ async function route() {
     }
     const { campaign, error } = decodeCampaignLink(parsed.hash);
     if (error || !campaign) {
-      view.innerHTML = `<p class="form-error">That campaign link could not be opened: ${esc(error || 'unknown error')}</p>`;
+      // F8: the decoder's raw error is validation jargon ("id: missing;
+      // title: missing; ...") — never show it. Human copy; the detail
+      // stays in the console for debugging.
+      if (error) console.warn('Cabal: invite link could not be decoded:', error);
+      view.innerHTML = '<p class="form-error">That invite link didn&rsquo;t open &mdash; it looks incomplete or mistyped. Ask the person who sent it for a fresh link.</p>';
       const holder = document.createElement('div');
       view.appendChild(holder);
       home.mount(holder, { store, navigate });

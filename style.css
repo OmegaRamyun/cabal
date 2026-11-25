@@ -117,6 +117,11 @@
   --cabal-panel: #14100d;
   --cabal-hairline: #2a211a;
   --cabal-hairline-strong: #3d3026;
+  /* FAIL 40 (render tier, Nov 24): input edges need 3:1 against the fill
+   * (#1c1612) and the body (#0b0908) — hairline-strong only managed
+   * 1.41:1 / 1.56:1. #7a6a58 clears 3:1 on fill (3.44), body (3.81),
+   * and panel (3.63). Inputs only; cards keep hairline-strong. */
+  --cabal-input-edge: #7a6a58;
   --cabal-ember: #c8501e;
   --cabal-ember-deep: #a84318;
   --cabal-ember-soft: rgba(200, 80, 30, 0.16);
@@ -356,7 +361,7 @@ textarea {
   line-height: 1.45;
   color: var(--cabal-bone);
   background: var(--cabal-surface-2);
-  border: 1px solid var(--cabal-hairline-strong);
+  border: 1px solid var(--cabal-input-edge);
   border-radius: var(--cabal-radius);
   transition: border-color var(--cabal-duration-quick) var(--cabal-ease),
     box-shadow var(--cabal-duration-quick) var(--cabal-ease),
