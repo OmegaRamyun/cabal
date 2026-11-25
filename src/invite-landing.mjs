@@ -94,7 +94,12 @@ export function renderDeadLink() {
   </section>`;
 }
 
-/** Full-focus invite card HTML. */
+/** Full-focus invite card HTML.
+ * V77: the form is `novalidate` and the name input carries NO `required`
+ * attribute — native validation blocks the submit event entirely, so the
+ * inline #invite-errors path in mount() never ran and an empty-name Join
+ * was a silent no-op. Validation lives in validateJoin; the error shows
+ * inline instead. */
 export function renderInviteCard(campaign, me = {}) {
   const members = campaign.members || [];
   const faces = members
@@ -112,10 +117,10 @@ export function renderInviteCard(campaign, me = {}) {
     ${campaign.game?.name ? `<p class="invite-game">${esc(campaign.game.name)}</p>` : ''}
     ${members.length ? `<div class="invite-faces">${faces}${more}</div><p class="invite-members">${names}</p>` : ''}
     <p class="view-lede">${esc(INVITE_COPY)}</p>
-    <form id="invite-join-form" class="cabal-form">
+    <form id="invite-join-form" class="cabal-form" novalidate>
       <p class="form-error" id="invite-errors" hidden></p>
       <label>Your name
-        <input type="text" name="name" value="${esc(me?.name || '')}" required autocomplete="off" autofocus>
+        <input type="text" name="name" value="${esc(me?.name || '')}" autocomplete="off" autofocus>
       </label>
       <label>Handle (optional)
         <input type="text" name="handle" value="${esc(me?.handle || '')}" autocomplete="off" placeholder="@yourhandle">
@@ -145,6 +150,8 @@ export function mount(rootEl, ctx = {}) {
       const errEl = rootEl.querySelector('#invite-errors');
       errEl.textContent = res.error;
       errEl.hidden = false;
+      const nameInput = form.querySelector('input[name="name"]');
+      if (nameInput && typeof nameInput.focus === 'function') nameInput.focus();
       return;
     }
     if (typeof ctx.onJoin === 'function') ctx.onJoin(res.campaign, res.member);

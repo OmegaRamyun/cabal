@@ -123,6 +123,8 @@ export function intentUrl(platform, draft, post) {
  * the user cancels. Cancel -> onPosted is NOT called. Otherwise onPosted
  * is called with the quote URL ('' when blank — the URL is optional).
  * Returns { posted, quoteUrl }.
+ * Kept for callers/tests that still drive the step through a prompt
+ * function; mount() itself no longer prompts (V77 inline URL field).
  */
 export function confirmPosted({ prompt, onPosted }) {
   const answer = prompt();
@@ -132,14 +134,35 @@ export function confirmPosted({ prompt, onPosted }) {
   return { posted: true, quoteUrl };
 }
 
+export const NOTHING_RECORDED_COPY = 'Nothing recorded — add your quote first.';
+export const POSTED_RECORDED_COPY = 'Recorded — thanks for posting.';
+
+/**
+ * V77 — the "I posted it" step for the inline URL field, as a pure
+ * function. `postedStep({ draft, quoteUrl })` ->
+ *   { recorded: true, quoteUrl, message } when the draft has text
+ *   (the URL stays optional, trimmed; '' when blank), or
+ *   { recorded: false, quoteUrl: '', message: NOTHING_RECORDED_COPY }
+ *   when the draft is empty. Empty/cancel never records silently:
+ *   the caller shows `message` inline.
+ */
+export function postedStep({ draft, quoteUrl } = {}) {
+  if (!String(draft ?? '').trim()) {
+    return { recorded: false, quoteUrl: '', message: NOTHING_RECORDED_COPY };
+  }
+  return { recorded: true, quoteUrl: String(quoteUrl ?? '').trim(), message: POSTED_RECORDED_COPY };
+}
+
 /**
  * mount(rootEl, ctx) where
- *   ctx = { campaign, post?, me, onPosted(quoteUrl, draft, post), compact?, prompt?, storage?, onKindled? }.
+ *   ctx = { campaign, post?, me, onPosted(quoteUrl, draft, post), compact?, storage?, onKindled? }.
  * Renders ONLY for X / Bluesky target posts (for other platforms, returns
  * `{ supported: false, ... }` without modifying `rootEl`).
  * Renders: target post (author, text, link — unless compact), one empty
  * textarea, a live gate warning, "Open in X" / "Open in Bluesky" links,
- * and an "I posted it" button.
+ * an inline quote-post URL field (optional — V77 replaces the native
+ * window.prompt), and an "I posted it" button with a Cancel button.
+ * Empty draft / Cancel never record silently: an inline message says so.
  */
 export function mount(rootEl, ctx = {}) {
   const { campaign, me, onPosted } = ctx;
@@ -156,6 +179,9 @@ export function mount(rootEl, ctx = {}) {
       warning: null,
       links: {},
       postedButton: null,
+      urlInput: null,
+      cancelButton: null,
+      message: null,
       anchorBox: null,
       update() {},
       destroy() {},
@@ -249,11 +275,39 @@ export function mount(rootEl, ctx = {}) {
   limitNote.setAttribute('role', 'alert');
   section.append(limitNote);
 
+  // V77: inline quote-post URL field — replaces the native
+  // window.prompt("Paste your quote-post URL (optional):"). The URL
+  // stays optional; the field is read when "I posted it" is tapped.
+  const urlLabel = doc.createElement('label');
+  urlLabel.className = 'quote-url-label';
+  urlLabel.textContent = 'Your quote-post URL (optional)';
+  const urlInput = doc.createElement('input');
+  urlInput.className = 'quote-url';
+  urlInput.type = 'url';
+  urlInput.value = '';
+  urlInput.placeholder = 'https://x.com/.../status/...';
+  urlInput.setAttribute('aria-label', 'Your quote-post URL (optional)');
+  urlLabel.append(urlInput);
+  section.append(urlLabel);
+
   const postedButton = doc.createElement('button');
   postedButton.className = 'quote-posted';
   postedButton.type = 'button';
   postedButton.textContent = 'I posted it';
   section.append(postedButton);
+
+  const cancelButton = doc.createElement('button');
+  cancelButton.className = 'quote-posted-cancel';
+  cancelButton.type = 'button';
+  cancelButton.textContent = 'Cancel';
+  section.append(cancelButton);
+
+  // Inline feedback for the "I posted it" step: empty draft and Cancel
+  // both land here visibly instead of failing silently.
+  const message = doc.createElement('p');
+  message.className = 'quote-posted-message';
+  message.setAttribute('aria-live', 'polite');
+  section.append(message);
 
   rootEl.append(section);
 
@@ -300,24 +354,24 @@ export function mount(rootEl, ctx = {}) {
     // The draft rides along as the second arg so the caller can record
     // it as the assist's quoteText (the Enscryption receipt for x/bluesky);
     // the URL stays the first arg, and the target post is the third arg.
-    const report = (quoteUrl) => {
-      if (typeof onPosted === 'function') onPosted(quoteUrl, textarea.value, post);
-    };
-    const promptFn =
-      typeof ctx.prompt === 'function'
-        ? () => ctx.prompt('Paste your quote-post URL (optional):')
-        : typeof globalThis.prompt === 'function'
-          ? () => globalThis.prompt('Paste your quote-post URL (optional):')
-          : null;
-    if (promptFn) {
-      confirmPosted({ prompt: promptFn, onPosted: report });
-    } else {
-      report('');
-    }
+    // V77: the URL comes from the inline field, never a native prompt.
+    // An empty draft records nothing and says so inline — never silent.
+    const step = postedStep({ draft: textarea.value, quoteUrl: urlInput.value });
+    message.textContent = step.message;
+    if (!step.recorded) return;
+    if (typeof onPosted === 'function') onPosted(step.quoteUrl, textarea.value, post);
+  }
+
+  function onCancelClick() {
+    // Abandoning the report: clear the URL, say so inline, record
+    // nothing. The draft is left alone — Cancel never destroys work.
+    urlInput.value = '';
+    message.textContent = NOTHING_RECORDED_COPY;
   }
 
   textarea.addEventListener('input', update);
   postedButton.addEventListener('click', onPostedClick);
+  cancelButton.addEventListener('click', onCancelClick);
   update();
 
   return {
@@ -328,11 +382,15 @@ export function mount(rootEl, ctx = {}) {
     warning,
     links,
     postedButton,
+    urlInput,
+    cancelButton,
+    message,
     anchorBox,
     update,
     destroy() {
       textarea.removeEventListener('input', update);
       postedButton.removeEventListener('click', onPostedClick);
+      cancelButton.removeEventListener('click', onCancelClick);
       if (revisionTracker) revisionTracker.destroy();
       section.remove();
     },
