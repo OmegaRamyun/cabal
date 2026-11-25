@@ -98,9 +98,9 @@ test("demo content is fictional: no real games, people, or handles", () => {
   assert.equal(demoGame().links.itch, "https://starlight-salvage.itch.io/starlight-salvage");
 });
 
-test("demoBadge returns DEMO for demo campaigns and '' otherwise", () => {
-  assert.equal(DEMO_BADGE, "DEMO");
-  assert.equal(demoBadge(demoCampaigns(NOW)[0]), "DEMO");
+test("demoBadge returns Demo for demo campaigns and '' otherwise", () => {
+  assert.equal(DEMO_BADGE, "Demo");
+  assert.equal(demoBadge(demoCampaigns(NOW)[0]), "Demo");
   assert.equal(demoBadge({ demo: false }), "");
   assert.equal(demoBadge({}), "");
   assert.equal(demoBadge(null), "");

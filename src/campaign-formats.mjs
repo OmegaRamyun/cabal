@@ -435,7 +435,7 @@ export function mount(rootEl, ctx = {}) {
   const headerMain = el(doc, "div", null, "cabal-page-header-main");
   const titleRow = el(doc, "div", null, "ring-title-row");
   titleRow.appendChild(el(doc, "h2", f.tagline, "format-tagline"));
-  if (f.demo) titleRow.appendChild(el(doc, "span", "DEMO", "demo-badge"));
+  if (f.demo) titleRow.appendChild(el(doc, "span", "Demo", "demo-badge"));
   headerMain.appendChild(titleRow);
   if (f.description) headerMain.appendChild(el(doc, "p", f.description, "view-lede format-description"));
   const used = usageLabel(f.id, ctx.usage);
@@ -541,7 +541,7 @@ export function mount(rootEl, ctx = {}) {
         }
         rowBtn.appendChild(main);
         const badges = el(doc, "span", null, "adopt-picker-row-badges");
-        if (entry.demo) badges.appendChild(el(doc, "span", "DEMO", "demo-badge"));
+        if (entry.demo) badges.appendChild(el(doc, "span", "Demo", "demo-badge"));
         if (entry.alreadyRunning) {
           badges.appendChild(el(doc, "span", "Running", "status-pill status-pill--active"));
         }
@@ -611,7 +611,7 @@ export function mount(rootEl, ctx = {}) {
       if (typeof ctx.navigate === "function") ctx.navigate(r);
     });
     li.appendChild(btn);
-    if (r.demo) li.appendChild(el(doc, "span", "DEMO", "demo-badge"));
+    if (r.demo) li.appendChild(el(doc, "span", "Demo", "demo-badge"));
     ringList.appendChild(li);
   }
   page.appendChild(ringList);

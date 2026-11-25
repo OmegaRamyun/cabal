@@ -111,7 +111,7 @@ test("format mount: renders sections, rings running it, drops unsafe example URL
   const f = { ...valid, demo: true, examples: [...valid.examples, { url: "javascript:alert(1)", platform: "x" }] };
   mountFormat(root, { format: f, rings: [{ id: "r1", title: "Ring One", formatId: valid.id }, { id: "r2", title: "Other" }] });
   const t = root.textContent;
-  for (const s of ["A TAGLINE", "What it is.", "How to run it", "Example uses", "Ring One", "DEMO", "Start a ring"]) assert.ok(t.includes(s), s);
+  for (const s of ["A TAGLINE", "What it is.", "How to run it", "Example uses", "Ring One", "Demo", "Start a ring"]) assert.ok(t.includes(s), s);
   assert.ok(!t.includes("Other"));
   assert.ok(!t.includes("used by"));
   assert.equal(root.all("a").filter((a) => a.href?.startsWith("javascript")).length, 0);
