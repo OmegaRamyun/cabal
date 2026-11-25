@@ -231,7 +231,7 @@ class FakeEl {
   }
 }
 
-test("mount: renders Similar + Popular sections, row detail, DEMO badge, click navigates", () => {
+test("mount: renders Similar + Popular sections, row detail, Demo badge, click navigates", () => {
   const doc = { createElement: (tag) => new FakeEl(tag) };
   const root = new FakeEl("div");
   root.ownerDocument = doc;
@@ -258,7 +258,7 @@ test("mount: renders Similar + Popular sections, row detail, DEMO badge, click n
   assert.ok(text.includes("Pixel Orchard launch week"));
   assert.ok(text.includes("2 members, 1 ringmate has contributed"));
   assert.ok(text.includes("cozy, farming"));
-  assert.ok(text.includes("DEMO"));
+  assert.ok(text.includes("Demo"));
 
   const buttons = root.querySelectorAll("button");
   assert.ok(buttons.length >= 2);

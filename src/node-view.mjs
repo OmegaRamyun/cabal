@@ -666,6 +666,18 @@ export function nodeAtPoint(graph, x, y, opts = {}) {
 }
 
 /**
+ * Nodes shown by the Rings/Templates filter chips ('all' | 'ring' | 'format').
+ * The chips dim the other kind on the map; the side-panel "Nodes in view"
+ * list is the visible list, so it must filter too — otherwise the tabs
+ * look dead. Unknown filters fall back to all nodes.
+ */
+export function visibleNodesForFilter(nodes, filter) {
+  const list = Array.isArray(nodes) ? nodes : [];
+  if (filter === "ring" || filter === "format") return list.filter((n) => n && n.kind === filter);
+  return list;
+}
+
+/**
  * Edges touching `selectedId`, or all edges when nothing is selected.
  */
 export function visibleEdges(graph, selectedId) {
@@ -1467,10 +1479,21 @@ export function mount(rootEl, ctx = {}) {
         ),
       );
 
+      // V78: the ≥2-dev + real-game-page gate is why a brand-new ring is
+      // not here yet. State it on the populated view too, not only in the
+      // empty state — reuse EMPTY_STATE_COPY verbatim, don't restate it.
+      panel.appendChild(el(doc, "p", EMPTY_STATE_COPY, "node-panel-gate"));
+
       const quickHeading = el(doc, "p", "Nodes in view", "node-panel-subhead");
       panel.appendChild(quickHeading);
       const quickList = el(doc, "ul", null, "node-panel-quicklist");
-      for (const item of positionedNodes) {
+      const inView = visibleNodesForFilter(positionedNodes, activeFilter);
+      if (!inView.length) {
+        quickList.appendChild(el(doc, "li",
+          activeFilter === "format" ? "No templates in view yet." : "No rings in view yet.",
+          "empty-state"));
+      }
+      for (const item of inView) {
         const li = el(doc, "li");
         const btn = el(doc, "button", null, "node-panel-conn-btn");
         btn.type = "button";
@@ -1500,7 +1523,7 @@ export function mount(rootEl, ctx = {}) {
       el(doc, "span", node.kind === "format" ? "Campaign template" : "Ring"),
     );
     if (node.demo) {
-      kindWrap.appendChild(el(doc, "span", "DEMO", "demo-badge"));
+      kindWrap.appendChild(el(doc, "span", "Demo", "demo-badge"));
     }
     head.appendChild(kindWrap);
 

@@ -10,7 +10,7 @@
 
 import { normalizeCampaign } from "./campaign.mjs";
 
-export const DEMO_BADGE = "DEMO";
+export const DEMO_BADGE = "Demo";
 
 export const DEMO_GAME_NAME = "Starlight Salvage";
 
@@ -312,7 +312,7 @@ export function mount(rootEl, ctx = {}) {
   const doc = rootEl.ownerDocument;
   rootEl.textContent = "";
   const banner = el(doc, "div", null, "cabal-demo-banner");
-  banner.appendChild(el(doc, "strong", "DEMO MODE"));
+  banner.appendChild(el(doc, "strong", "Demo mode"));
   banner.appendChild(
     el(doc, "span", " — fictional example data. None of this is real: the game, the people, and the posts are made up so you can see how Cabal works."),
   );

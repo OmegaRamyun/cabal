@@ -114,7 +114,7 @@ function rowEl(doc, campaign, navigate) {
     (tags ? ` — ${tags}` : ""),
     "discovery-row-label"));
   if (campaign.demo) {
-    const badge = el(doc, "span", "DEMO", "demo-badge");
+    const badge = el(doc, "span", "Demo", "demo-badge");
     btn.appendChild(badge);
   }
   btn.addEventListener("click", () => {
@@ -134,7 +134,7 @@ function formatRowEl(doc, format, usage, navigateFormat) {
   btn.appendChild(el(doc, "span", f.tagline, "discovery-row-label"));
   if (f.description) btn.appendChild(el(doc, "span", ` — ${f.description}`, "format-row-desc"));
   if (used) btn.appendChild(el(doc, "span", ` — ${used}`, "format-usage"));
-  if (f.demo) btn.appendChild(el(doc, "span", "DEMO", "demo-badge"));
+  if (f.demo) btn.appendChild(el(doc, "span", "Demo", "demo-badge"));
   btn.addEventListener("click", () => {
     if (typeof navigateFormat === "function") navigateFormat(format);
   });
@@ -152,7 +152,7 @@ function formatRowEl(doc, format, usage, navigateFormat) {
  * the order falls back to member-count order. The ring-discovery sections
  * below stay as "rings you could join".
  * Renders two sections, "Similar games" and "Popular". Each row shows
- * game name, title, member count, contributed ringmates, latest activity, tags, and a DEMO badge
+ * game name, title, member count, contributed ringmates, latest activity, tags, and a Demo badge
  * when demo. Clicking a row calls navigate(campaign) — the caller opens
  * the campaign page (link intent). Read-only: no posting, no storage.
  */
