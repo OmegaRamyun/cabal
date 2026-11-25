@@ -274,7 +274,7 @@ function hideDemoBanner() {
  * would wipe anything appended there). Mounted fresh on every campaign
  * route; emptied on other routes by route(). Takes the campaign
  * findCampaign() already resolved, so static listed campaigns (e.g.
- * ToonSouls) get a panel too — they stay read-only (no key, Publish
+ * a formerly listed demo) get a panel too — they stay read-only (no key, Publish
  * disabled) and are only written to localStorage if a sync actually
  * changed them. onMerged merges by id (mergeSyncedIntoStore) instead of
  * replacing the whole stored list, and re-renders only the campaign
