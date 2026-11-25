@@ -25,10 +25,16 @@ export const STORAGE_KEYS = Object.freeze({
 // V47: relay.nostr.band was dropped — it timed out twice from a live browser
 // (Nov 23 2026) while damus and nos.lol answered. Add it back only after a
 // fresh live check. KNOWN_DEAD_RELAYS is what the tests pin the defaults against.
+// V76: relay.damus.io DEMOTED — live browser probe Nov 24 2026: damus was
+// unreachable in 4/4 relay ops while nos.lol answered every time. (It answered
+// Nov 23, so this is a demotion, not a death sentence: re-add only after a
+// fresh live check.) No replacement relay is named here: a Nov 24 probe from
+// this box failed every endpoint including known-good nos.lol, so the sandbox
+// cannot verify a second relay — verify one live before adding it.
 export const DEFAULT_RELAYS = Object.freeze([
-  "wss://relay.damus.io",
   "wss://nos.lol",
 ]);
+export const DEMOTED_RELAYS = Object.freeze(["wss://relay.damus.io"]);
 export const KNOWN_DEAD_RELAYS = Object.freeze(["wss://relay.nostr.band"]);
 
 export const PRIVACY_LINE = "Anything on a public relay is public, and it can't be reliably deleted.";
@@ -170,6 +176,61 @@ export function campaignPubkey(campaign) {
   return typeof campaign?.nostr?.pubkey === "string" && /^[0-9a-f]{64}$/.test(campaign.nostr.pubkey)
     ? campaign.nostr.pubkey
     : null;
+}
+
+// ---------------------------------------------------------------------------
+// V76 — publish truth: stamping local nostr.createdAt at publish time
+// ---------------------------------------------------------------------------
+/**
+ * Stamp a campaign with the relay-accepted publish of its kind-30078 event.
+ * Pure: returns a clone, never mutates `campaign`. The stamp is the single
+ * source of "published" truth the UI reads: the membership line
+ * ("last synced …" vs "not published yet") and the share-link upgrade
+ * (campaign-page shareLinkFor keys on `nostr.createdAt` + campaign key).
+ * Only call with an event a relay actually accepted — stamping an
+ * unaccepted event would upgrade the share link to an naddr the relays
+ * have never seen. Preserves `key` and any existing `nostr` fields.
+ */
+export function stampPublished(campaign, event) {
+  if (!campaign || typeof campaign !== "object") return campaign;
+  const c = structuredClone(campaign);
+  if (!event || !Number.isInteger(event.created_at)) return c;
+  c.nostr = { ...(c.nostr ?? {}), pubkey: event.pubkey, eventId: event.id, createdAt: event.created_at };
+  return c;
+}
+
+/** True when the ring has a relay-accepted publish stamped locally. */
+export const isPublished = (campaign) =>
+  Number.isInteger(campaign?.nostr?.createdAt) && campaign.nostr.createdAt > 0;
+
+/**
+ * The exact condition the share link upgrades on: published AND writable
+ * (campaign-page shareLinkFor: `nostr.createdAt && hasCampaignKey`).
+ * A read-only ring (no key) never gets the short naddr link, even if a
+ * fetch stamped createdAt — only the key holder can share the join link.
+ */
+export const shortLinkReady = (campaign) => isPublished(campaign) && hasCampaignKey(campaign);
+
+/**
+ * Nudge for a writable ring that has never been published — the discoverability
+ * hook for the Sync panel (mount renders it) and for app.js after ring
+ * creation. Pure. Returns null when there is nothing to nudge about
+ * (read-only ring, or already published).
+ * `relayInfo` is `{ configured, relays }` as returned by loadRelays().
+ */
+export function syncNudgeFor(campaign, relayInfo = {}) {
+  if (!campaign || !hasCampaignKey(campaign) || isPublished(campaign)) return null;
+  const { configured = false, relays = [] } = relayInfo;
+  if (!configured || !relays.length) {
+    return {
+      kind: "setup",
+      text: "This ring isn't on the relays yet — use the suggested relays below, then Publish my ring so ringmates can fetch it.",
+    };
+  }
+  return {
+    kind: "publish",
+    text: "This ring hasn't been published yet — tap Publish my ring so ringmates can fetch it from the relays.",
+  };
 }
 
 /**
@@ -649,17 +710,26 @@ export const useDefaultRelays = (storage) => saveRelays([...DEFAULT_RELAYS], sto
 // ---------------------------------------------------------------------------
 // Relay client (vanilla WebSocket; best-effort; a down relay never throws)
 // ---------------------------------------------------------------------------
-export function createRelayClient({ relays = [], WebSocketImpl = globalThis.WebSocket, timeoutMs = 6000, onStatus } = {}) {
+export function createRelayClient({ relays = [], WebSocketImpl = globalThis.WebSocket, timeoutMs = 6000, deadCooldownMs = 60000, onStatus } = {}) {
   const conns = new Map();
+  // V76: a relay that failed to connect (or dropped) is not re-dialled until
+  // the cooldown elapses, so one dead default costs one timeout per session
+  // instead of one per sync op. Session-scoped only; a reload retries.
+  const deadSince = new Map();
   const state = {};
   const setState = (u, s) => { state[u] = s; try { onStatus?.({ ...state }); } catch { /* ui bug must not break sync */ } };
 
   function connect(url) {
     if (conns.has(url)) return conns.get(url).ready;
+    const since = deadSince.get(url);
+    if (since != null && Date.now() - since < deadCooldownMs) {
+      setState(url, "unreachable");
+      return Promise.resolve(null);
+    }
     const c = { ws: null, listeners: new Set() };
     c.ready = new Promise((resolve) => {
       let settled = false;
-      const done = (ok) => { if (!settled) { settled = true; clearTimeout(timer); setState(url, ok ? "connected" : "unreachable"); if (!ok) conns.delete(url); resolve(ok ? c : null); } };
+      const done = (ok) => { if (!settled) { settled = true; clearTimeout(timer); setState(url, ok ? "connected" : "unreachable"); if (!ok) { conns.delete(url); deadSince.set(url, Date.now()); } resolve(ok ? c : null); } };
       const timer = setTimeout(() => { try { c.ws?.close(); } catch { /* ignore */ } done(false); }, timeoutMs);
       setState(url, "connecting");
       try {
@@ -667,7 +737,7 @@ export function createRelayClient({ relays = [], WebSocketImpl = globalThis.WebS
         c.ws = new WebSocketImpl(url);
         c.ws.onopen = () => done(true);
         c.ws.onerror = () => done(false);
-        c.ws.onclose = () => { if (!settled) done(false); else { conns.delete(url); setState(url, "unreachable"); } };
+        c.ws.onclose = () => { if (!settled) done(false); else { conns.delete(url); deadSince.set(url, Date.now()); setState(url, "unreachable"); } };
         c.ws.onmessage = (m) => { let msg; try { msg = JSON.parse(m.data); } catch { return; } for (const l of c.listeners) l(msg); };
       } catch { done(false); }
     });
@@ -778,6 +848,16 @@ export async function publishCampaign(client, campaign, opts = {}) {
   }
   const results = [];
   for (const ev of out) results.push({ id: ev.id, kind: ev.kind, relays: await client.publish(ev) });
+  // V76: stamp the local campaign with the relay-accepted campaign event so
+  // the membership line stops saying "not published yet" and the share link
+  // upgrades to the short naddr link. Stamped ONLY when at least one relay
+  // accepted the campaign event — an all-unreachable publish stamps nothing.
+  // Attached as `results.campaign` (undefined when nothing was accepted);
+  // the array shape itself is unchanged.
+  if (includeCampaign) {
+    const accepted = Object.values(results[0]?.relays ?? {}).some((r) => r?.ok);
+    results.campaign = accepted ? stampPublished(campaign, out[0]) : undefined;
+  }
   return results;
 }
 
@@ -797,7 +877,11 @@ export async function publishRemoval(client, campaign, opts = {}) {
   const { key } = campaignKeypair(campaign);
   const ev = await signEvent(removalEvent(campaign, { createdAt: opts.createdAt }), key);
   const relays = await client.publish(ev);
-  return { event: ev, id: ev.id, kind: ev.kind, relays };
+  // V76: stamp the local campaign when a relay accepted the removal republish,
+  // so the membership line and the next removal's strictly-newer created_at
+  // both read the truth. Null when no relay accepted.
+  const accepted = Object.values(relays ?? {}).some((r) => r?.ok);
+  return { event: ev, id: ev.id, kind: ev.kind, relays, campaign: accepted ? stampPublished(campaign, ev) : null };
 }
 
 /**
@@ -813,7 +897,9 @@ export async function publishAdoption(client, campaign, opts = {}) {
   const { key } = campaignKeypair(campaign);
   const ev = await signEvent(adoptionEvent(campaign, { createdAt: opts.createdAt }), key);
   const relays = await client.publish(ev);
-  return { event: ev, id: ev.id, kind: ev.kind, relays };
+  // V76: same stamping rule as publishRemoval — stamp only on relay acceptance.
+  const accepted = Object.values(relays ?? {}).some((r) => r?.ok);
+  return { event: ev, id: ev.id, kind: ev.kind, relays, campaign: accepted ? stampPublished(campaign, ev) : null };
 }
 
 // ---------------------------------------------------------------------------
@@ -899,12 +985,19 @@ export function mount(rootEl, ctx = {}) {
       try {
         const handle = ctx.me?.handle;
         let ok = 0, total = 0;
+        const stamped = [];
         for (const c of camps) {
           if (!hasCampaignKey(c)) continue;
-          for (const r of await publishCampaign(clientFor(), c, { handle })) {
+          const res = await publishCampaign(clientFor(), c, { handle });
+          for (const r of res) {
             for (const x of Object.values(r.relays)) { total++; if (x.ok) ok++; }
           }
+          // V76: persist the relay-accepted stamp so the membership line and
+          // the share link upgrade immediately. onMerged merges by id (same
+          // seam as Fetch updates) and re-renders the campaign page only.
+          if (res.campaign) stamped.push(res.campaign);
         }
+        if (stamped.length) ctx.onMerged?.(stamped);
         message = `Published to relays: ${ok} of ${total} accepted. It is public, and it can't be reliably deleted.`;
       } catch (e) { message = String(e?.message ?? "Publishing failed."); }
       render();
@@ -914,9 +1007,14 @@ export function mount(rootEl, ctx = {}) {
   }
 
   function render() {
-    rootEl.replaceChildren(
-      el("div", { class: "nostr-panel" }, el("h2", {}, "Sync (Nostr)"), el("p", { class: "privacy" }, PRIVACY_LINE), relaySection(), membershipSection(), actionSection()),
-    );
+    // V76: surface the nudge for a writable ring that has never been published,
+    // so sync is discoverable the moment the panel opens instead of hiding
+    // behind the collapsed "Advanced" shell.
+    const nudge = syncNudgeFor(ctx.campaign ?? activeCampaigns()[0], loadRelays(ctx.storage));
+    const panel = el("div", { class: "nostr-panel" }, el("h2", {}, "Sync (Nostr)"), el("p", { class: "privacy" }, PRIVACY_LINE));
+    if (nudge) panel.append(el("p", { class: "sync-nudge", role: "status" }, nudge.text));
+    panel.append(relaySection(), membershipSection(), actionSection());
+    rootEl.replaceChildren(panel);
   }
   render();
   return { render, destroy() { rootEl.replaceChildren(); } };
