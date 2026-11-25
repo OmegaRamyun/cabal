@@ -10,11 +10,17 @@ const mem = () => { const m = new Map(); return { getItem: (k) => (m.has(k) ? m.
 // Live check, Nov 23 2026: the browser saw damus + nos.lol answer and
 // relay.nostr.band time out twice. (The build sandbox cannot open outbound
 // websockets, so its own probe timed out on all three and proves nothing.)
+// V76: damus DEMOTED Nov 24 2026 — live browser probe, unreachable in 4/4
+// relay ops while nos.lol answered every time. A Nov 24 sandbox probe failed
+// every endpoint including known-good nos.lol, so no replacement relay is
+// verified yet; the single verified default stands until one is checked live.
 test("defaults are unique wss:// relays and exclude every known-dead relay", () => {
-  assert.ok(N.DEFAULT_RELAYS.length >= 2);
+  assert.ok(N.DEFAULT_RELAYS.length >= 1);
   assert.equal(new Set(N.DEFAULT_RELAYS).size, N.DEFAULT_RELAYS.length);
   for (const r of N.DEFAULT_RELAYS) { assert.match(r, /^wss:\/\//); assert.ok(!N.KNOWN_DEAD_RELAYS.includes(r), r); }
-  assert.deepEqual([...N.DEFAULT_RELAYS], ["wss://relay.damus.io", "wss://nos.lol"]);
+  assert.deepEqual([...N.DEFAULT_RELAYS], ["wss://nos.lol"]);
+  assert.ok(!N.DEFAULT_RELAYS.includes("wss://relay.damus.io"), "damus demoted V76");
+  assert.deepEqual([...N.DEMOTED_RELAYS], ["wss://relay.damus.io"]);
 });
 test("useDefaultRelays never configures a known-dead relay", () => {
   const st = mem();
