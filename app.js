@@ -298,6 +298,16 @@ function renderSyncPanel(campaign) {
   body.className = 'ring-sync-body';
   details.append(summary, body);
   slot.appendChild(details);
+  // V76: open the panel when THIS ring still needs sync (relays unconfigured
+  // or never published) — the nudge banner renders inside via nostr.mount,
+  // so a fresh ring's creator lands on the sync step instead of a collapsed
+  // "Advanced" sheet. Read-only and published rings stay collapsed.
+  const nudge = nostr.syncNudgeFor(campaign, nostr.loadRelays(globalThis.localStorage));
+  if (nudge) {
+    details.open = true;
+    const chip = summary.querySelector('.relay-status-chip');
+    if (chip) chip.textContent = nudge.kind === 'setup' ? 'Sync not set up' : 'Not published yet';
+  }
   nostr.mount(body, {
     campaign,
     getCampaigns: () => store.campaigns,
@@ -373,7 +383,10 @@ function renderCampaign(view, id, opts = {}) {
         try {
           const { relays } = nostr.loadRelays(globalThis.localStorage);
           const client = nostr.createRelayClient({ relays });
-          await nostr.publishRemoval(client, campaign, { by: store.me?.handle });
+          const res = await nostr.publishRemoval(client, campaign, { by: store.me?.handle });
+          // V76: persist the publish stamp so the membership line and the
+          // share link read the truth (a republish counts as published).
+          if (res?.campaign) store.saveCampaigns(mergeSyncedIntoStore(store.campaigns, [res.campaign], campaign));
         } catch {
           // Local removal stands; relay republish retries from the panel.
         }
@@ -390,7 +403,9 @@ function renderCampaign(view, id, opts = {}) {
         try {
           const { relays } = nostr.loadRelays(globalThis.localStorage);
           const client = nostr.createRelayClient({ relays });
-          await nostr.publishAdoption(client, updated);
+          const res = await nostr.publishAdoption(client, updated);
+          // V76: persist the publish stamp (see onMemberRemoved).
+          if (res?.campaign) store.saveCampaigns(mergeSyncedIntoStore(store.campaigns, [res.campaign], updated));
         } catch {
           // Local adoption stands; relay republish retries from the panel.
         }
@@ -400,7 +415,9 @@ function renderCampaign(view, id, opts = {}) {
         try {
           const { relays } = nostr.loadRelays(globalThis.localStorage);
           const client = nostr.createRelayClient({ relays });
-          await nostr.publishAdoption(client, updated);
+          const res = await nostr.publishAdoption(client, updated);
+          // V76: persist the publish stamp (see onMemberRemoved).
+          if (res?.campaign) store.saveCampaigns(mergeSyncedIntoStore(store.campaigns, [res.campaign], updated));
         } catch {
           // Local removal stands; relay republish retries from the panel.
         }
@@ -647,7 +664,9 @@ async function renderFormat(view, formatId) {
         try {
           const { relays } = nostr.loadRelays(globalThis.localStorage);
           const client = nostr.createRelayClient({ relays });
-          await nostr.publishAdoption(client, updatedRing);
+          const res = await nostr.publishAdoption(client, updatedRing);
+          // V76: persist the publish stamp (see onMemberRemoved).
+          if (res?.campaign) store.saveCampaigns(mergeSyncedIntoStore(store.campaigns, [res.campaign], updatedRing));
         } catch {
           // Local adoption stands; relay republish retries from the panel.
         }

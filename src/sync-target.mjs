@@ -1,7 +1,8 @@
 // V47(a): pure helpers for the campaign-page Sync panel (app.js, V48 applies).
 // The panel must mount for ANY campaign findCampaign() resolves — local
-// (localStorage) or static listed (data/campaigns.json, e.g. ToonSouls).
-// And a sync of one campaign must never replace the whole stored list.
+// (localStorage) or static listed (data/campaigns.json, e.g. a formerly
+// listed demo). And a sync of one campaign must never replace the whole
+// stored list.
 
 import { hasCampaignKey, isPublished } from "./nostr.mjs";
 
