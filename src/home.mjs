@@ -189,9 +189,17 @@ export function buildMergedCreation(input = {}) {
   // (invite-landing's unclaimed-seed check) instead of being routed to
   // join their own ring as a second member. The handle is backfilled on
   // their first post, as before.
+  // V77: optional "Your name" at creation (input.creatorName) — the
+  // creator's member record uses it when given, falling back to the
+  // previous behaviour (existing me name, else the game name) when
+  // blank. Never fabricates a handle.
+  const creatorName = String(input.creatorName ?? '').trim();
+  const fallbackName = (input.existingMe && input.existingMe.name) || gameName;
   const me = handle
-    ? { name: (input.existingMe && input.existingMe.name) || gameName, handle }
-    : input.existingMe || { name: gameName, handle: '' };
+    ? { name: creatorName || fallbackName, handle }
+    : input.existingMe
+      ? { ...input.existingMe, ...(creatorName ? { name: creatorName } : {}) }
+      : { name: creatorName || gameName, handle: '' };
   const creator = {
     name: (me && me.name) || gameName,
     handle,
@@ -710,6 +718,11 @@ export function mount(rootEl, ctx) {
     const existingLinks = (existingGame && existingGame.links) || {};
     const existingTags = Array.isArray(existingGame?.tags) ? existingGame.tags.join(', ') : '';
     const existingHandle = store.me?.handle || '';
+    // V77: prefill "Your name" only when we actually know the creator's
+    // name — a stored me name that just repeats the game name is the old
+    // fallback, not a name the creator gave us.
+    const existingName =
+      store.me?.name && store.me.name !== (existingGame?.name || '') ? store.me.name : '';
 
     rootEl.innerHTML = `
       <section class="campaign-create cabal-form-page">
@@ -734,6 +747,9 @@ export function mount(rootEl, ctx) {
           <div class="cabal-form-row">
             <label>Tags (optional, comma-separated)
               <input type="text" name="tags" value="${esc(existingTags)}" placeholder="roguelike, cozy, pixel-art" autocomplete="off">
+            </label>
+            <label>Your name (optional)
+              <input type="text" name="creatorName" value="${esc(existingName)}" placeholder="e.g. Wren" autocomplete="off">
             </label>
             <label>Your handle (optional)
               <input type="text" name="handle" value="${esc(existingHandle)}" placeholder="@yourhandle" autocomplete="off">
@@ -822,6 +838,7 @@ export function mount(rootEl, ctx) {
         gameName: data.get('gameName'),
         ringName: data.get('ringName'),
         tags: data.get('tags'),
+        creatorName: data.get('creatorName'),
         handle: data.get('handle'),
         steam: data.get('steam'),
         itch: data.get('itch'),

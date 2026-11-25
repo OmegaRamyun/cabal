@@ -195,7 +195,6 @@ test('mount: anchor attached, textarea starts empty, gate live, links stay enabl
     campaign: campaign(),
     me: { handle: '@me' },
     onPosted: (url) => posted.push(url),
-    prompt: () => 'https://x.com/me/status/7',
   });
   assert.equal(h.textarea.value, '');
   const anchorBox = h.anchorBox;
@@ -227,7 +226,8 @@ test('mount: anchor attached, textarea starts empty, gate live, links stay enabl
   assert.equal(h.warning.dataset.verdict, 'pass');
   assert.equal(h.warning.textContent, 'Looks like your own words.');
 
-  // "I posted it" prompts for the quote URL and calls onPosted with it.
+  // "I posted it" reads the inline URL field and calls onPosted with it.
+  h.urlInput.value = 'https://x.com/me/status/7';
   h.postedButton.dispatch('click');
   assert.deepEqual(posted, ['https://x.com/me/status/7']);
 
@@ -235,17 +235,24 @@ test('mount: anchor attached, textarea starts empty, gate live, links stay enabl
   assert.equal(root.children.length, 0);
 });
 
-test('mount: "I posted it" with a cancelled prompt does not call onPosted', () => {
+test('mount: "I posted it" with an empty draft records nothing and says so', () => {
   const root = fakeRoot();
   const posted = [];
   const h = mount(root, {
     campaign: campaign(),
     me: { handle: '@me' },
     onPosted: (url) => posted.push(url),
-    prompt: () => null,
   });
   h.postedButton.dispatch('click');
   assert.deepEqual(posted, []);
+  assert.match(h.message.textContent, /Nothing recorded/);
+  // Cancel also records nothing and says so, clearing the URL field.
+  h.textarea.value = OWN_WORDS;
+  h.urlInput.value = 'https://x.com/me/status/7';
+  h.cancelButton.dispatch('click');
+  assert.deepEqual(posted, []);
+  assert.equal(h.urlInput.value, '');
+  assert.match(h.message.textContent, /Nothing recorded/);
   h.destroy();
 });
 
